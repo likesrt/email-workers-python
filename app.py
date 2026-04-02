@@ -799,10 +799,10 @@ CONSOLE_PAGE_SCRIPT = r'''
 
       function updateAutoCleanupStatus() {
         if (!state.isAutoCleanupOn) {
-          autoCleanupStatus.textContent = "自动清理：已停止（默认清理 10 分钟前）";
+          autoCleanupStatus.textContent = "自动清理：已停止";
           return;
         }
-        autoCleanupStatus.textContent = "自动清理：" + state.autoCleanupConfiguredMinutes + " 分钟一次，约 " + state.autoCleanupRemainingSeconds + " 秒后执行";
+        autoCleanupStatus.textContent = "自动清理：每 " + state.autoCleanupConfiguredMinutes + " 分钟执行一次，约 " + state.autoCleanupRemainingSeconds + " 秒后执行，清理 10 分钟前的邮件";
       }
 
       function stopAutoRefreshCountdown() {
@@ -1543,7 +1543,7 @@ CONSOLE_PAGE_TEMPLATE = '''<!DOCTYPE html>
             <div id="autoRefreshStatus" class="status muted" data-kind="info">自动查询：3 秒后刷新</div>
           </div>
           <div class="status-shell">
-            <div id="autoCleanupStatus" class="status muted" data-kind="info">自动清理：已停止（默认清理 10 分钟前）</div>
+            <div id="autoCleanupStatus" class="status muted" data-kind="info">自动清理：已停止</div>
           </div>
           <div style="height: 16px;"></div>
           <div class="pagination">
