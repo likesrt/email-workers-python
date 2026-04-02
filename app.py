@@ -26,8 +26,9 @@ DEFAULT_PAGE = 1
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 MAX_RAW_TEXT_LENGTH = 128 * 1024
-CLEANUP_OLDER_THAN_SECONDS = 24 * 60 * 60
+MANUAL_CLEANUP_DEFAULT_MINUTES = 24 * 60
 AUTO_CLEANUP_DEFAULT_INTERVAL_MINUTES = 10
+AUTO_CLEANUP_DEFAULT_BEFORE_MINUTES = 10
 
 # 运行所需环境变量：统一 API Token 与 PostgreSQL 连接串。
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -724,10 +725,10 @@ CONSOLE_PAGE_SCRIPT = r'''
 
       function updateAutoCleanupStatus() {
         if (!state.isAutoCleanupOn) {
-          autoCleanupStatus.textContent = "系统自动清理已停止。";
+          autoCleanupStatus.textContent = "系统自动清理已停止。默认清理 10 分钟前的邮件。";
           return;
         }
-        autoCleanupStatus.textContent = "系统自动清理已开启，约 " + state.autoCleanupRemainingSeconds + " 秒后执行一次；间隔 " + state.autoCleanupConfiguredMinutes + " 分钟";
+        autoCleanupStatus.textContent = "系统自动清理已开启，约 " + state.autoCleanupRemainingSeconds + " 秒后执行一次；间隔 " + state.autoCleanupConfiguredMinutes + " 分钟；默认清理 10 分钟前的邮件";
       }
 
       function stopAutoRefreshCountdown() {
@@ -858,7 +859,7 @@ CONSOLE_PAGE_SCRIPT = r'''
         autoCleanupMinutesInput.value = String(state.autoCleanupConfiguredMinutes);
         syncAutoCleanup();
         setActionStatus(
-          state.isAutoCleanupOn ? "系统自动清理配置已加载。" : "系统自动清理当前关闭。",
+          state.isAutoCleanupOn ? "系统自动清理配置已加载，默认清理 10 分钟前的邮件。" : "系统自动清理当前关闭，默认清理 10 分钟前的邮件。",
           "info"
         );
       }
@@ -1578,7 +1579,7 @@ fetch("/api/mails?" + params.toString(), {
         <section class="doc-card">
           <h3>系统自动清理配置</h3>
           <div class="small">GET / PUT <code>/api/admin/auto-cleanup</code></div>
-          <p>用于读取或更新后端自动清理开关与执行间隔。</p>
+          <p>用于读取或更新后端自动清理开关与执行间隔。系统默认清理 10 分钟前的邮件。</p>
           <pre class="code-box">fetch("/api/admin/auto-cleanup", {
   method: "PUT",
   headers: {
@@ -1595,7 +1596,7 @@ fetch("/api/mails?" + params.toString(), {
         <section class="doc-card">
           <h3>手动历史清理</h3>
           <div class="small">POST <code>/api/admin/cleanup-history</code></div>
-          <p>仅在你手动触发时执行清理，也可传入 JSON body 指定 <code>before</code> 时间。</p>
+          <p>仅在你手动触发时执行清理，也可传入 JSON body 指定 <code>before</code> 时间；不传时默认清理一天前的邮件。</p>
           <pre class="code-box">fetch("/api/admin/cleanup-history", {
   method: "POST",
   headers: {
@@ -1816,8 +1817,8 @@ def validate_cleanup_interval(minutes: int) -> int:
 
 
 def get_cleanup_cutoff() -> datetime:
-    """返回默认历史清理时间阈值。"""
-    return datetime.now(timezone.utc) - timedelta(seconds=CLEANUP_OLDER_THAN_SECONDS)
+    """返回系统自动清理默认时间阈值。"""
+    return datetime.now(timezone.utc) - timedelta(minutes=AUTO_CLEANUP_DEFAULT_BEFORE_MINUTES)
 
 
 def build_auto_cleanup_response(state: dict[str, Any]) -> dict[str, Any]:
@@ -1825,6 +1826,7 @@ def build_auto_cleanup_response(state: dict[str, Any]) -> dict[str, Any]:
     return {
         "enabled": bool(state["enabled"]),
         "intervalMinutes": int(state["intervalMinutes"]),
+        "beforeMinutes": AUTO_CLEANUP_DEFAULT_BEFORE_MINUTES,
         "lastRunAt": str(state["lastRunAt"] or ""),
         "lastDeletedCount": int(state["lastDeletedCount"] or 0),
     }
@@ -2202,7 +2204,7 @@ def handle_cleanup_history_mails(
 ) -> dict[str, Any]:
     """手动清理指定时间之前的历史邮件。"""
     require_api_token(request)
-    before_value = payload.before if payload and payload.before else get_cleanup_cutoff()
+    before_value = payload.before if payload and payload.before else datetime.now(timezone.utc) - timedelta(minutes=MANUAL_CLEANUP_DEFAULT_MINUTES)
     deleted_count = delete_mails_before(before_value)
     return {"success": True, "before": isoformat_value(before_value), "deletedCount": deleted_count}
 
