@@ -16,7 +16,7 @@ from uuid import uuid4
 import psycopg
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from psycopg.rows import dict_row
 from starlette.concurrency import run_in_threadpool
@@ -24,11 +24,13 @@ from starlette.concurrency import run_in_threadpool
 # 数据库与查询相关常量。
 TABLE_MAILS = "received_mails"
 TABLE_AUTO_CLEANUP = "auto_cleanup_settings"
+TABLE_ATTACHMENTS = "mail_attachments"
 AUTO_CLEANUP_CONFIG_KEY = "default"
 DEFAULT_PAGE = 1
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 MAX_RAW_TEXT_LENGTH = 128 * 1024
+MAX_SINGLE_ATTACHMENT_BYTES = 100 * 1024 * 1024   # 单个附件最大 10 MB
 MANUAL_CLEANUP_DEFAULT_MINUTES = 24 * 60
 AUTO_CLEANUP_DEFAULT_INTERVAL_MINUTES = 10
 AUTO_CLEANUP_DEFAULT_BEFORE_MINUTES = 10
@@ -36,6 +38,8 @@ AUTO_CLEANUP_DEFAULT_BEFORE_MINUTES = 10
 # 运行所需环境变量：统一 API Token 与 PostgreSQL 连接串。
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
+# 附件存储根目录，默认 ./attachments，可通过环境变量覆盖。
+ATTACHMENTS_DIR = os.path.abspath(os.getenv("ATTACHMENTS_DIR", "./attachments"))
 
 # 主表：同时保存邮件基础字段、原始内容和头信息。
 SQL_CREATE_TABLE = f"""
@@ -73,6 +77,30 @@ CREATE TABLE IF NOT EXISTS {TABLE_AUTO_CLEANUP} (
   last_deleted_count INTEGER NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+"""
+
+# 附件表：记录元数据，文件本体落到磁盘。
+SQL_CREATE_ATTACHMENTS_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {TABLE_ATTACHMENTS} (
+  id TEXT PRIMARY KEY,
+  mail_id TEXT NOT NULL REFERENCES {TABLE_MAILS}(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  file_path TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+SQL_CREATE_INDEX_ATTACHMENTS_MAIL_ID = f"""
+CREATE INDEX IF NOT EXISTS idx_{TABLE_ATTACHMENTS}_mail_id
+ON {TABLE_ATTACHMENTS} (mail_id);
+"""
+
+SQL_INSERT_ATTACHMENT = f"""
+INSERT INTO {TABLE_ATTACHMENTS} (id, mail_id, filename, content_type, size_bytes, file_path)
+VALUES (%s, %s, %s, %s, %s, %s)
+ON CONFLICT (id) DO NOTHING;
 """
 
 SQL_INSERT_MAIL = f"""
@@ -416,16 +444,6 @@ SHARED_PAGE_STYLE = r'''
     .status[data-kind="success"] {
       color: #c7ffe7;
     }
-    .pagination-field {
-      display: grid;
-      gap: 8px;
-      width: 120px;
-      margin: 0;
-    }
-    .pagination-field input {
-      min-height: 46px;
-      text-align: center;
-    }
     .pagination .pill {
       min-height: 46px;
       padding: 11px 16px;
@@ -597,6 +615,34 @@ SHARED_PAGE_STYLE = r'''
       border-radius: 16px;
       background: #ffffff;
     }
+    .attachment-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+    }
+    .attachment-row:last-child {
+      border-bottom: 0;
+    }
+    .attachment-name {
+      flex: 1;
+      min-width: 0;
+      word-break: break-all;
+    }
+    .attachment-meta {
+      color: var(--text-soft);
+      white-space: nowrap;
+    }
+    .attachment-dl {
+      color: var(--accent);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .attachment-dl:hover {
+      text-decoration: underline;
+    }
     .header-table {
       width: 100%;
       min-width: 0;
@@ -667,10 +713,6 @@ SHARED_PAGE_STYLE = r'''
       .field.wide {
         grid-column: span 12;
       }
-      .pagination-field {
-        width: 100%;
-        max-width: none;
-      }
       h1 {
         font-size: 38px;
       }
@@ -697,7 +739,6 @@ CONSOLE_PAGE_SCRIPT = r'''
       const manualCleanupMinutesInput = document.getElementById("manualCleanupMinutesInput");
       const autoCleanupMinutesInput = document.getElementById("autoCleanupMinutesInput");
       const autoRefreshSecondsInput = document.getElementById("autoRefreshSecondsInput");
-      const pageInput = document.getElementById("pageInput");
       const searchBtn = document.getElementById("searchBtn");
       const cleanupBtn = document.getElementById("cleanupBtn");
       const toggleAutoCleanupBtn = document.getElementById("toggleAutoCleanupBtn");
@@ -706,7 +747,6 @@ CONSOLE_PAGE_SCRIPT = r'''
       const autoCleanupStatus = document.getElementById("autoCleanupStatus");
       const resetFiltersBtn = document.getElementById("resetFiltersBtn");
       const prevPageBtn = document.getElementById("prevPageBtn");
-      const jumpPageBtn = document.getElementById("jumpPageBtn");
       const nextPageBtn = document.getElementById("nextPageBtn");
       const paginationInfo = document.getElementById("paginationInfo");
       const authStatus = document.getElementById("authStatus");
@@ -717,6 +757,7 @@ CONSOLE_PAGE_SCRIPT = r'''
       const detailMeta = document.getElementById("detailMeta");
       const detailBody = document.getElementById("detailBody");
       const detailHeaders = document.getElementById("detailHeaders");
+      const detailAttachments = document.getElementById("detailAttachments");
       const detailRaw = document.getElementById("detailRaw");
       const closeDetailBtn = document.getElementById("closeDetailBtn");
       const closeDetailBtn2 = document.getElementById("closeDetailBtn2");
@@ -1111,7 +1152,6 @@ CONSOLE_PAGE_SCRIPT = r'''
 
       function updatePaginationInfo() {
         paginationInfo.textContent = "第 " + state.page + " / " + (state.totalPages || 1) + " 页，共 " + state.total + " 封";
-        pageInput.value = String(state.page);
         prevPageBtn.disabled = state.page <= 1;
         nextPageBtn.disabled = state.totalPages === 0 || state.page >= state.totalPages;
       }
@@ -1121,7 +1161,7 @@ CONSOLE_PAGE_SCRIPT = r'''
         const rcptTo = rcptToInput.value.trim();
         const after = toIsoFromLocalInput(afterInput.value);
         const before = toIsoFromLocalInput(beforeInput.value);
-        const page = pageOverride || parseInt(pageInput.value || "1", 10) || 1;
+        const page = pageOverride || state.page || 1;
         const pageSize = parseInt(pageSizeSelect.value || "20", 10) || 20;
         if (rcptTo) params.set("rcptTo", rcptTo);
         if (after) params.set("after", after);
@@ -1129,6 +1169,29 @@ CONSOLE_PAGE_SCRIPT = r'''
         params.set("page", String(page));
         params.set("pageSize", String(pageSize));
         return { params, page, pageSize };
+      }
+
+      function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+        return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+      }
+
+      function renderAttachmentList(items) {
+        if (!Array.isArray(items) || items.length === 0) {
+          detailAttachments.innerHTML = '<div class="small">无附件</div>';
+          return;
+        }
+        // 每个附件渲染为一行下载链接。
+        detailAttachments.innerHTML = items.map(function (a) {
+          return [
+            '<div class="attachment-row">',
+            '<span class="attachment-name">' + escapeHtml(a.filename) + '</span>',
+            '<span class="attachment-meta">' + escapeHtml(a.contentType) + ' · ' + formatFileSize(a.sizeBytes) + '</span>',
+            '<a class="attachment-dl" href="' + escapeHtml(a.downloadUrl) + '" download="' + escapeHtml(a.filename) + '">下载</a>',
+            '</div>'
+          ].join("");
+        }).join("");
       }
 
       function renderMailDetail(data) {
@@ -1186,10 +1249,16 @@ CONSOLE_PAGE_SCRIPT = r'''
           detailMeta.innerHTML = "";
           detailBody.textContent = "正在整理邮件正文...";
           detailHeaders.innerHTML = "";
+          detailAttachments.innerHTML = '<div class="small">加载中...</div>';
           detailRaw.textContent = "";
           openDetailModal();
-          const data = await fetchJson("/api/mails/" + encodeURIComponent(id), { method: "GET" });
+          // 并行请求邮件详情与附件列表，减少等待时间。
+          const [data, attData] = await Promise.all([
+            fetchJson("/api/mails/" + encodeURIComponent(id), { method: "GET" }),
+            fetchJson("/api/mails/" + encodeURIComponent(id) + "/attachments", { method: "GET" })
+          ]);
           renderMailDetail(data);
+          renderAttachmentList(attData.items || []);
         } catch (error) {
           detailTitle.textContent = "邮件详情";
           detailBody.textContent = "详情加载失败: " + (error && error.message ? error.message : String(error));
@@ -1243,7 +1312,6 @@ CONSOLE_PAGE_SCRIPT = r'''
         autoRefreshSecondsInput.value = "3";
         saveValue(STORAGE_MANUAL_CLEANUP_MINUTES_KEY, "10");
         saveValue(STORAGE_AUTO_REFRESH_SECONDS_KEY, "3");
-        pageInput.value = "1";
         syncAutoRefresh();
       }
 
@@ -1266,7 +1334,6 @@ CONSOLE_PAGE_SCRIPT = r'''
         setAuthStatus("本地 API_TOKEN 已清空。", "success");
       });
       searchBtn.addEventListener("click", function () {
-        pageInput.value = "1";
         loadMails(1);
       });
       cleanupBtn.addEventListener("click", function () { cleanupHistoryMails(); });
@@ -1309,9 +1376,6 @@ CONSOLE_PAGE_SCRIPT = r'''
       });
       nextPageBtn.addEventListener("click", function () {
         if (state.totalPages > 0 && state.page < state.totalPages) loadMails(state.page + 1);
-      });
-      jumpPageBtn.addEventListener("click", function () {
-        loadMails(parseInt(pageInput.value || "1", 10) || 1);
       });
       mailTableBody.addEventListener("click", function (event) {
         const target = event.target;
@@ -1484,7 +1548,6 @@ CONSOLE_PAGE_TEMPLATE = '''<!DOCTYPE html>
           <div style="height: 16px;"></div>
           <div class="pagination">
             <button id="prevPageBtn" class="secondary" type="button">上一页</button>
-            <button id="jumpPageBtn" class="secondary" type="button">跳转</button>
             <button id="nextPageBtn" class="secondary" type="button">下一页</button>
             <span id="paginationInfo" class="pill">等待查询</span>
           </div>
@@ -1534,6 +1597,10 @@ CONSOLE_PAGE_TEMPLATE = '''<!DOCTYPE html>
         <div class="detail-card">
           <strong>正文</strong>
           <div id="detailBody" class="html-box body-box">暂无详情</div>
+        </div>
+        <div class="detail-card">
+          <strong>附件</strong>
+          <div id="detailAttachments"><div class="small">无附件</div></div>
         </div>
         <div class="detail-card">
           <strong>邮件头</strong>
@@ -1786,6 +1853,70 @@ def extract_mail_bodies(raw_text: str) -> dict[str, str]:
     return {"textBody": text_body, "htmlBody": html_body}
 
 
+def _decode_attachment_filename(part: Any) -> str:
+    """解码附件文件名，优先取 filename 参数，回退到 name 参数。"""
+    filename = part.get_filename() or part.get_param("name") or ""
+    return decode_mail_header(filename) or "attachment"
+
+
+def _safe_attachment_filename(raw_name: str, attachment_id: str) -> str:
+    """对附件文件名做路径安全处理，防止目录穿越。"""
+    base = os.path.basename(raw_name).strip() or "attachment"
+    # 只保留合法字符，其余替换为下划线。
+    safe = re.sub(r"[^\w.\-]", "_", base)
+    return f"{attachment_id}_{safe}"
+
+
+def _write_attachment_file(attachment_id: str, raw_name: str, data: bytes) -> str:
+    """将附件字节写入磁盘，返回相对于 ATTACHMENTS_DIR 的文件路径。"""
+    filename = _safe_attachment_filename(raw_name, attachment_id)
+    file_path = os.path.join(ATTACHMENTS_DIR, filename)
+    with open(file_path, "wb") as f:
+        f.write(data)
+    return filename
+
+
+def extract_and_save_attachments(mail_id: str, raw_text: str) -> list[dict[str, Any]]:
+    """提取邮件所有附件，写入磁盘并返回元数据列表。"""
+    message = parse_raw_message(raw_text)
+    results: list[dict[str, Any]] = []
+    for part in message.walk():
+        if part.is_multipart():
+            continue
+        disposition = (part.get_content_disposition() or "").lower()
+        if disposition != "attachment":
+            continue
+        data = part.get_payload(decode=True)
+        if not isinstance(data, bytes) or not data:
+            continue
+        if len(data) > MAX_SINGLE_ATTACHMENT_BYTES:
+            continue
+        attachment_id = str(uuid4())
+        raw_name = _decode_attachment_filename(part)
+        filename = _write_attachment_file(attachment_id, raw_name, data)
+        results.append({
+            "id": attachment_id,
+            "mail_id": mail_id,
+            "filename": raw_name,
+            "content_type": part.get_content_type() or "application/octet-stream",
+            "size_bytes": len(data),
+            "file_path": filename,
+        })
+    return results
+
+
+def insert_attachments(conn: Any, attachments: list[dict[str, Any]]) -> None:
+    """批量写入附件元数据到数据库。"""
+    if not attachments:
+        return
+    with conn.cursor() as cur:
+        for a in attachments:
+            cur.execute(SQL_INSERT_ATTACHMENT, [
+                a["id"], a["mail_id"], a["filename"],
+                a["content_type"], a["size_bytes"], a["file_path"],
+            ])
+
+
 def decode_mail_header(value: Any) -> str:
     """解码单个邮件头字段。"""
     text = str(value or "")
@@ -1970,7 +2101,11 @@ def ensure_schema() -> None:
             cur.execute(SQL_CREATE_INDEX_RECEIVED_AT)
             cur.execute(SQL_CREATE_INDEX_RCPT_TO_RECEIVED_AT)
             cur.execute(SQL_CREATE_AUTO_CLEANUP_TABLE)
+            cur.execute(SQL_CREATE_ATTACHMENTS_TABLE)
+            cur.execute(SQL_CREATE_INDEX_ATTACHMENTS_MAIL_ID)
         conn.commit()
+    # 确保附件目录存在。
+    os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
 
 
 def build_where_clause(filters: MailListFilters) -> tuple[str, list[Any]]:
@@ -2093,14 +2228,79 @@ def get_mail_by_id_and_address(address: str, mail_id: str) -> dict[str, Any] | N
             return cur.fetchone()
 
 
+def list_attachments_by_mail(mail_id: str) -> list[dict[str, Any]]:
+    """查询指定邮件的所有附件元数据。"""
+    sql = f"""
+    SELECT id, mail_id, filename, content_type, size_bytes, file_path, created_at
+    FROM {TABLE_ATTACHMENTS} WHERE mail_id = %s ORDER BY created_at;
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, [mail_id])
+            rows = cur.fetchall() or []
+    return [map_attachment_row(r) for r in rows]
+
+
+def map_attachment_row(row: dict[str, Any]) -> dict[str, Any]:
+    """将数据库行映射为附件摘要结构。"""
+    return {
+        "id": str(row["id"]),
+        "mailId": str(row["mail_id"]),
+        "filename": str(row["filename"]),
+        "contentType": str(row["content_type"]),
+        "sizeBytes": int(row["size_bytes"]),
+        "downloadUrl": f"/api/attachments/{row['id']}/download",
+    }
+
+
+def get_attachment_by_id(attachment_id: str) -> dict[str, Any] | None:
+    """查询单条附件元数据。"""
+    sql = f"""
+    SELECT id, mail_id, filename, content_type, size_bytes, file_path
+    FROM {TABLE_ATTACHMENTS} WHERE id = %s LIMIT 1;
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, [attachment_id])
+            return cur.fetchone()
+
+
+def _delete_attachment_files(file_paths: list[str]) -> None:
+    """删除磁盘上的附件文件，忽略不存在的文件。"""
+    for name in file_paths:
+        path = os.path.join(ATTACHMENTS_DIR, name)
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+
+
+def delete_attachments_before(before: datetime) -> list[str]:
+    """查询并删除过期附件元数据，返回需删除的文件路径列表。"""
+    sql = f"""
+    DELETE FROM {TABLE_ATTACHMENTS}
+    WHERE mail_id IN (SELECT id FROM {TABLE_MAILS} WHERE received_at < %s)
+    RETURNING file_path;
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, [before])
+            rows = cur.fetchall() or []
+        conn.commit()
+    return [str(r["file_path"]) for r in rows]
+
+
 def delete_mails_before(before: datetime) -> int:
-    """删除指定时间之前的历史邮件并返回删除数量。"""
+    """删除指定时间之前的历史邮件（含关联附件元数据）并返回删除数量。"""
+    # 先收集需删除的附件文件路径，再删邮件（ON DELETE CASCADE 会级联删附件行）。
+    file_paths = delete_attachments_before(before)
     sql = f"DELETE FROM {TABLE_MAILS} WHERE received_at < %s;"
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, [before])
             deleted = cur.rowcount
         conn.commit()
+    _delete_attachment_files(file_paths)
     return int(deleted or 0)
 
 
@@ -2132,10 +2332,11 @@ async def replace_auto_cleanup_task(state: dict[str, Any]) -> None:
 
 
 def upsert_mail(payload: IngestEmailRequest) -> str:
-    """解析原始邮件后写入或更新数据库。"""
+    """解析原始邮件后写入或更新数据库，并提取附件落盘。"""
     rcpt_to = normalize_email_address(payload.rcptTo)
     if not is_valid_email_address(rcpt_to):
         raise HTTPException(status_code=400, detail="Invalid recipient address.")
+    # 截断过大的原始邮件（不含附件部分）
     raw_text = truncate_text(payload.rawText or "", MAX_RAW_TEXT_LENGTH)
     message = parse_raw_message(raw_text)
     params = {
@@ -2153,8 +2354,12 @@ def upsert_mail(payload: IngestEmailRequest) -> str:
         with conn.cursor() as cur:
             cur.execute(SQL_INSERT_MAIL, params)
             row = cur.fetchone() or {"id": params["id"]}
+        mail_id = str(row["id"])
+        # 提取附件并在同一事务内写入元数据。
+        attachments = extract_and_save_attachments(mail_id, payload.rawText or "")
+        insert_attachments(conn, attachments)
         conn.commit()
-    return str(row["id"])
+    return mail_id
 
 
 def render_console_page() -> str:
@@ -2345,6 +2550,31 @@ def handle_cleanup_history_mails(
     before_value = payload.before if payload and payload.before else datetime.now(timezone.utc) - timedelta(minutes=MANUAL_CLEANUP_DEFAULT_MINUTES)
     deleted_count = delete_mails_before(before_value)
     return {"success": True, "before": isoformat_value(before_value), "deletedCount": deleted_count}
+
+
+@app.get("/api/mails/{mail_id}/attachments")
+def handle_list_attachments(mail_id: str, request: Request) -> dict[str, Any]:
+    """返回指定邮件的附件列表。"""
+    require_api_token(request)
+    items = list_attachments_by_mail(mail_id)
+    return {"mailId": mail_id, "items": items}
+
+
+@app.get("/api/attachments/{attachment_id}/download")
+def handle_download_attachment(attachment_id: str, request: Request) -> FileResponse:
+    """下载指定附件文件。"""
+    require_api_token(request)
+    row = get_attachment_by_id(attachment_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    file_path = os.path.join(ATTACHMENTS_DIR, str(row["file_path"]))
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Attachment file missing.")
+    return FileResponse(
+        path=file_path,
+        media_type=str(row["content_type"]),
+        filename=str(row["filename"]),
+    )
 
 
 if __name__ == "__main__":
