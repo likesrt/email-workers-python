@@ -19,9 +19,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from psycopg.rows import dict_row
+from starlette.concurrency import run_in_threadpool
 
 # 数据库与查询相关常量。
 TABLE_MAILS = "received_mails"
+TABLE_AUTO_CLEANUP = "auto_cleanup_settings"
+AUTO_CLEANUP_CONFIG_KEY = "default"
 DEFAULT_PAGE = 1
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
@@ -59,6 +62,17 @@ ON {TABLE_MAILS} (received_at DESC);
 SQL_CREATE_INDEX_RCPT_TO_RECEIVED_AT = f"""
 CREATE INDEX IF NOT EXISTS idx_{TABLE_MAILS}_rcpt_to_received_at
 ON {TABLE_MAILS} (rcpt_to, received_at DESC);
+"""
+
+SQL_CREATE_AUTO_CLEANUP_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {TABLE_AUTO_CLEANUP} (
+  config_key TEXT PRIMARY KEY,
+  enabled BOOLEAN NOT NULL,
+  interval_minutes INTEGER NOT NULL,
+  last_run_at TIMESTAMPTZ,
+  last_deleted_count INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 SQL_INSERT_MAIL = f"""
@@ -559,10 +573,29 @@ SHARED_PAGE_STYLE = r'''
       border: 1px solid rgba(255, 255, 255, 0.07);
       background: rgba(4, 9, 18, 0.88);
       color: #dce7f8;
-      white-space: pre-wrap;
       word-break: break-word;
-      font-family: "JetBrains Mono", "Fira Code", monospace;
       overflow: auto;
+    }
+    .body-box,
+    .raw-box,
+    .code-box {
+      white-space: pre-wrap;
+      font-family: "JetBrains Mono", "Fira Code", monospace;
+    }
+    .html-box {
+      padding: 0;
+      background: #ffffff;
+      color: #111827;
+      white-space: normal;
+      font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .mail-html-frame {
+      display: block;
+      width: 100%;
+      min-height: 420px;
+      border: 0;
+      border-radius: 16px;
+      background: #ffffff;
     }
     .header-table {
       width: 100%;
@@ -717,18 +750,18 @@ CONSOLE_PAGE_SCRIPT = r'''
 
       function updateAutoRefreshStatus() {
         if (!state.isAutoRefreshOn) {
-          autoRefreshStatus.textContent = "自动查询已停止。";
+          autoRefreshStatus.textContent = "自动查询已停止";
           return;
         }
-        autoRefreshStatus.textContent = "收件中，" + state.autoRefreshRemainingSeconds + " 秒后自动查询";
+        autoRefreshStatus.textContent = "自动查询：" + state.autoRefreshRemainingSeconds + " 秒后刷新";
       }
 
       function updateAutoCleanupStatus() {
         if (!state.isAutoCleanupOn) {
-          autoCleanupStatus.textContent = "系统自动清理已停止。默认清理 10 分钟前的邮件。";
+          autoCleanupStatus.textContent = "自动清理：已停止（默认清理 10 分钟前）";
           return;
         }
-        autoCleanupStatus.textContent = "系统自动清理已开启，约 " + state.autoCleanupRemainingSeconds + " 秒后执行一次；间隔 " + state.autoCleanupConfiguredMinutes + " 分钟；默认清理 10 分钟前的邮件";
+        autoCleanupStatus.textContent = "自动清理：" + state.autoCleanupConfiguredMinutes + " 分钟一次，约 " + state.autoCleanupRemainingSeconds + " 秒后执行";
       }
 
       function stopAutoRefreshCountdown() {
@@ -858,10 +891,6 @@ CONSOLE_PAGE_SCRIPT = r'''
         state.autoCleanupLastDeletedCount = Number(data.lastDeletedCount || 0);
         autoCleanupMinutesInput.value = String(state.autoCleanupConfiguredMinutes);
         syncAutoCleanup();
-        setActionStatus(
-          state.isAutoCleanupOn ? "系统自动清理配置已加载，默认清理 10 分钟前的邮件。" : "系统自动清理当前关闭，默认清理 10 分钟前的邮件。",
-          "info"
-        );
       }
 
       async function saveAutoCleanupConfig(enabled) {
@@ -961,7 +990,16 @@ CONSOLE_PAGE_SCRIPT = r'''
       }
 
       function sanitizeHtml(value) {
-        const doc = new DOMParser().parseFromString(String(value || ""), "text/html");
+        const dirty = String(value || "");
+        if (window.DOMPurify && typeof window.DOMPurify.sanitize === "function") {
+          return window.DOMPurify.sanitize(dirty, {
+            USE_PROFILES: { html: true },
+            FORBID_TAGS: ["script", "iframe", "object", "embed", "base", "meta"],
+            FORBID_ATTR: ["srcset"],
+            ALLOW_DATA_ATTR: false
+          });
+        }
+        const doc = new DOMParser().parseFromString(dirty, "text/html");
         doc.querySelectorAll("script,style,iframe,object,embed,link,meta,base").forEach(function (node) {
           node.remove();
         });
@@ -975,7 +1013,26 @@ CONSOLE_PAGE_SCRIPT = r'''
             }
           });
         });
-        return doc.body ? doc.body.innerHTML : String(value || "");
+        return doc.body ? doc.body.innerHTML : dirty;
+      }
+
+      function buildHtmlPreviewDocument(value) {
+        const cleanHtml = sanitizeHtml(value);
+        return [
+          '<!DOCTYPE html><html><head><meta charset="UTF-8">',
+          '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+          '<style>html,body{margin:0;padding:0;background:#fff;color:#111827;font-family:Arial,"PingFang SC","Microsoft YaHei",sans-serif;}body{padding:16px;line-height:1.6;}img{max-width:100%;height:auto;}table{max-width:100%;border-collapse:collapse;}pre{white-space:pre-wrap;word-break:break-word;}a{color:#2563eb;}</style>',
+          '</head><body>',
+          cleanHtml,
+          '</body></html>'
+        ].join("");
+      }
+
+      function renderHtmlBody(value) {
+        detailBody.innerHTML = '<iframe class="mail-html-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>';
+        const frame = detailBody.querySelector("iframe");
+        if (!(frame instanceof HTMLIFrameElement)) return;
+        frame.srcdoc = buildHtmlPreviewDocument(value);
       }
 
       function htmlToText(value) {
@@ -1085,7 +1142,7 @@ CONSOLE_PAGE_SCRIPT = r'''
           renderMetaCard("日期头", data.date)
         ].join("");
         if (data.htmlBody) {
-          detailBody.innerHTML = sanitizeHtml(data.htmlBody);
+          renderHtmlBody(data.htmlBody);
         } else {
           detailBody.textContent = cleanupBodyText(data.textBody || htmlToText(data.raw)) || "没有提取到可读正文。";
         }
@@ -1102,7 +1159,7 @@ CONSOLE_PAGE_SCRIPT = r'''
           const current = getCurrentQueryParams(pageOverride);
           state.page = current.page;
           state.pageSize = current.pageSize;
-          setActionStatus(loadingText, "info");
+          if (!isAutoRefresh) setActionStatus(loadingText, "info");
           const data = await fetchJson("/api/mails?" + current.params.toString(), { method: "GET" });
           state.total = Number(data.total || 0);
           state.totalPages = Number(data.totalPages || 0);
@@ -1319,6 +1376,7 @@ CONSOLE_PAGE_TEMPLATE = '''<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Email Workers Console</title>
   <style>__STYLE__</style>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.3.3/dist/purify.min.js"></script>
 </head>
 <body>
   <div class="page-shell">
@@ -1418,18 +1476,14 @@ CONSOLE_PAGE_TEMPLATE = '''<!DOCTYPE html>
             <div id="actionStatus" class="status muted" data-kind="info">查询、重置、清理与复制提示会显示在这里。</div>
           </div>
           <div class="status-shell">
-            <div id="autoRefreshStatus" class="status muted" data-kind="info">收件中，3 秒后自动查询</div>
+            <div id="autoRefreshStatus" class="status muted" data-kind="info">自动查询：3 秒后刷新</div>
           </div>
           <div class="status-shell">
-            <div id="autoCleanupStatus" class="status muted" data-kind="info">系统自动清理已停止。</div>
+            <div id="autoCleanupStatus" class="status muted" data-kind="info">自动清理：已停止（默认清理 10 分钟前）</div>
           </div>
           <div style="height: 16px;"></div>
           <div class="pagination">
             <button id="prevPageBtn" class="secondary" type="button">上一页</button>
-            <div class="pagination-field">
-              <label for="pageInput">页码</label>
-              <input id="pageInput" type="number" min="1" value="1" />
-            </div>
             <button id="jumpPageBtn" class="secondary" type="button">跳转</button>
             <button id="nextPageBtn" class="secondary" type="button">下一页</button>
             <span id="paginationInfo" class="pill">等待查询</span>
@@ -1471,7 +1525,7 @@ CONSOLE_PAGE_TEMPLATE = '''<!DOCTYPE html>
       <div class="modal-top">
         <div>
           <h2 id="detailTitle">邮件详情</h2>
-          <div class="section-note">优先展示可读正文，头信息和原始内容放在下方。</div>
+          <div class="section-note">优先展示可读正文，HTML 正文会经过 DOMPurify 清洗后在隔离 iframe 中渲染。</div>
         </div>
         <button id="closeDetailBtn" class="secondary" type="button">关闭</button>
       </div>
@@ -1809,6 +1863,29 @@ def create_auto_cleanup_state() -> dict[str, Any]:
     }
 
 
+def create_default_auto_cleanup_config() -> dict[str, Any]:
+    """创建自动清理默认配置。"""
+    return {
+        "enabled": False,
+        "intervalMinutes": AUTO_CLEANUP_DEFAULT_INTERVAL_MINUTES,
+        "lastRunAt": "",
+        "lastDeletedCount": 0,
+    }
+
+
+def merge_auto_cleanup_state(saved: dict[str, Any]) -> dict[str, Any]:
+    """将持久化配置合并为运行时状态。"""
+    state = create_auto_cleanup_state()
+    state.update(create_default_auto_cleanup_config())
+    state.update(saved)
+    state["enabled"] = bool(state["enabled"])
+    state["intervalMinutes"] = validate_cleanup_interval(int(state["intervalMinutes"]))
+    state["lastRunAt"] = str(state["lastRunAt"] or "")
+    state["lastDeletedCount"] = int(state["lastDeletedCount"] or 0)
+    state["task"] = None
+    return state
+
+
 def validate_cleanup_interval(minutes: int) -> int:
     """校验自动清理间隔分钟数。"""
     if minutes < 1:
@@ -1832,6 +1909,59 @@ def build_auto_cleanup_response(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def load_auto_cleanup_state() -> dict[str, Any]:
+    """从数据库加载自动清理配置。"""
+    sql = f"""
+    SELECT enabled, interval_minutes, last_run_at, last_deleted_count
+    FROM {TABLE_AUTO_CLEANUP} WHERE config_key = %s LIMIT 1;
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, [AUTO_CLEANUP_CONFIG_KEY])
+            row = cur.fetchone()
+    if not row:
+        return merge_auto_cleanup_state(create_default_auto_cleanup_config())
+    return merge_auto_cleanup_state({
+        "enabled": row["enabled"],
+        "intervalMinutes": row["interval_minutes"],
+        "lastRunAt": isoformat_value(row.get("last_run_at")),
+        "lastDeletedCount": row["last_deleted_count"],
+    })
+
+
+def save_auto_cleanup_state(state: dict[str, Any]) -> dict[str, Any]:
+    """将自动清理配置持久化到数据库。"""
+    sql = f"""
+    INSERT INTO {TABLE_AUTO_CLEANUP} (
+      config_key, enabled, interval_minutes, last_run_at, last_deleted_count, updated_at
+    ) VALUES (%s, %s, %s, %s, %s, NOW())
+    ON CONFLICT (config_key) DO UPDATE SET
+      enabled = EXCLUDED.enabled,
+      interval_minutes = EXCLUDED.interval_minutes,
+      last_run_at = EXCLUDED.last_run_at,
+      last_deleted_count = EXCLUDED.last_deleted_count,
+      updated_at = NOW()
+    RETURNING enabled, interval_minutes, last_run_at, last_deleted_count;
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, [
+                AUTO_CLEANUP_CONFIG_KEY,
+                bool(state["enabled"]),
+                validate_cleanup_interval(int(state["intervalMinutes"])),
+                state["lastRunAt"] or None,
+                int(state["lastDeletedCount"] or 0),
+            ])
+            row = cur.fetchone() or {}
+        conn.commit()
+    return merge_auto_cleanup_state({
+        "enabled": row.get("enabled", False),
+        "intervalMinutes": row.get("interval_minutes", AUTO_CLEANUP_DEFAULT_INTERVAL_MINUTES),
+        "lastRunAt": isoformat_value(row.get("last_run_at")),
+        "lastDeletedCount": row.get("last_deleted_count", 0),
+    })
+
+
 def ensure_schema() -> None:
     """初始化数据库表和索引。"""
     with get_connection() as conn:
@@ -1839,6 +1969,7 @@ def ensure_schema() -> None:
             cur.execute(SQL_CREATE_TABLE)
             cur.execute(SQL_CREATE_INDEX_RECEIVED_AT)
             cur.execute(SQL_CREATE_INDEX_RCPT_TO_RECEIVED_AT)
+            cur.execute(SQL_CREATE_AUTO_CLEANUP_TABLE)
         conn.commit()
 
 
@@ -1975,9 +2106,11 @@ def delete_mails_before(before: datetime) -> int:
 
 async def run_auto_cleanup_once(state: dict[str, Any]) -> None:
     """执行一次后端自动清理任务。"""
-    deleted = delete_mails_before(get_cleanup_cutoff())
+    deleted = await run_in_threadpool(delete_mails_before, get_cleanup_cutoff())
     state["lastRunAt"] = isoformat_value(datetime.now(timezone.utc))
     state["lastDeletedCount"] = deleted
+    saved = await run_in_threadpool(save_auto_cleanup_state, state)
+    state.update(saved)
 
 
 async def auto_cleanup_loop(state: dict[str, Any]) -> None:
@@ -1988,11 +2121,13 @@ async def auto_cleanup_loop(state: dict[str, Any]) -> None:
             await run_auto_cleanup_once(state)
 
 
-def replace_auto_cleanup_task(state: dict[str, Any]) -> None:
+async def replace_auto_cleanup_task(state: dict[str, Any]) -> None:
     """按当前状态重建自动清理后台任务。"""
     task = state.get("task")
     if task:
         task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
     state["task"] = asyncio.create_task(auto_cleanup_loop(state)) if state["enabled"] else None
 
 
@@ -2037,7 +2172,8 @@ async def lifespan(app: FastAPI):
     """在应用启动时校验配置并初始化数据库结构。"""
     ensure_settings()
     ensure_schema()
-    app.state.auto_cleanup = create_auto_cleanup_state()
+    app.state.auto_cleanup = load_auto_cleanup_state()
+    await replace_auto_cleanup_task(app.state.auto_cleanup)
     try:
         yield
     finally:
@@ -2184,7 +2320,7 @@ def handle_get_auto_cleanup_config(request: Request) -> dict[str, Any]:
 
 
 @app.put("/api/admin/auto-cleanup")
-def handle_update_auto_cleanup_config(
+async def handle_update_auto_cleanup_config(
     request: Request,
     payload: AutoCleanupConfigRequest,
 ) -> dict[str, Any]:
@@ -2193,7 +2329,9 @@ def handle_update_auto_cleanup_config(
     state = request.app.state.auto_cleanup
     state["enabled"] = bool(payload.enabled)
     state["intervalMinutes"] = validate_cleanup_interval(payload.intervalMinutes)
-    replace_auto_cleanup_task(state)
+    saved = await run_in_threadpool(save_auto_cleanup_state, state)
+    state.update(saved)
+    await replace_auto_cleanup_task(state)
     return build_auto_cleanup_response(state)
 
 
