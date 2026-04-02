@@ -16,7 +16,7 @@ from uuid import uuid4
 import psycopg
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from psycopg.rows import dict_row
 from starlette.concurrency import run_in_threadpool
@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS {TABLE_ATTACHMENTS} (
   mail_id TEXT NOT NULL REFERENCES {TABLE_MAILS}(id) ON DELETE CASCADE,
   filename TEXT NOT NULL,
   content_type TEXT NOT NULL,
+  content_id TEXT NOT NULL DEFAULT '',
+  disposition TEXT NOT NULL DEFAULT 'attachment',
   size_bytes INTEGER NOT NULL,
   file_path TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -97,9 +99,21 @@ CREATE INDEX IF NOT EXISTS idx_{TABLE_ATTACHMENTS}_mail_id
 ON {TABLE_ATTACHMENTS} (mail_id);
 """
 
+SQL_ALTER_ATTACHMENTS_ADD_CONTENT_ID = f"""
+ALTER TABLE {TABLE_ATTACHMENTS}
+ADD COLUMN IF NOT EXISTS content_id TEXT NOT NULL DEFAULT '';
+"""
+
+SQL_ALTER_ATTACHMENTS_ADD_DISPOSITION = f"""
+ALTER TABLE {TABLE_ATTACHMENTS}
+ADD COLUMN IF NOT EXISTS disposition TEXT NOT NULL DEFAULT 'attachment';
+"""
+
 SQL_INSERT_ATTACHMENT = f"""
-INSERT INTO {TABLE_ATTACHMENTS} (id, mail_id, filename, content_type, size_bytes, file_path)
-VALUES (%s, %s, %s, %s, %s, %s)
+INSERT INTO {TABLE_ATTACHMENTS} (
+  id, mail_id, filename, content_type, content_id, disposition, size_bytes, file_path
+)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (id) DO NOTHING;
 """
 
@@ -374,6 +388,18 @@ SHARED_PAGE_STYLE = r'''
       transition: border-color 0.2s ease, transform 0.2s ease,
         background-color 0.2s ease, box-shadow 0.2s ease;
     }
+    select {
+      -webkit-appearance: none;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23b7c4d8' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      padding-right: 36px;
+    }
+    select option {
+      background: #0e1a2e;
+      color: var(--text);
+    }
     input:focus,
     select:focus,
     textarea:focus {
@@ -427,10 +453,60 @@ SHARED_PAGE_STYLE = r'''
     }
     .status-shell {
       margin-top: 16px;
-      padding: 14px 16px;
-      border-radius: 18px;
-      border: 1px solid rgba(79, 209, 197, 0.18);
-      background: rgba(79, 209, 197, 0.08);
+      padding: 0;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      display: flex;
+      align-items: stretch;
+      overflow: hidden;
+      font-size: 13px;
+      line-height: 1;
+    }
+    .status-cell {
+      flex: 1 1 0;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 10px 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text-soft);
+      transition: color 0.25s, background 0.25s;
+    }
+    .status-cell + .status-cell {
+      border-left: 1px solid var(--line);
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: var(--text-soft);
+      opacity: 0.45;
+      transition: background 0.3s, opacity 0.3s, box-shadow 0.3s;
+    }
+    .status-cell[data-active="1"] .status-dot {
+      background: var(--success);
+      opacity: 1;
+      box-shadow: 0 0 6px rgba(52, 211, 153, 0.5);
+    }
+    .status-cell[data-kind="error"] { color: #ffa4b0; }
+    .status-cell[data-kind="error"] .status-dot {
+      background: var(--danger);
+      opacity: 1;
+      box-shadow: 0 0 6px rgba(255, 93, 115, 0.45);
+    }
+    .status-cell[data-kind="success"] { color: #a3f5d3; }
+    .status-cell[data-kind="success"] .status-dot {
+      background: var(--success);
+      opacity: 1;
+      box-shadow: 0 0 6px rgba(52, 211, 153, 0.5);
+    }
+    .status-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .status {
       min-height: 24px;
@@ -438,12 +514,8 @@ SHARED_PAGE_STYLE = r'''
       white-space: pre-wrap;
       word-break: break-word;
     }
-    .status[data-kind="error"] {
-      color: #ffd2d8;
-    }
-    .status[data-kind="success"] {
-      color: #c7ffe7;
-    }
+    .status[data-kind="error"] { color: #ffd2d8; }
+    .status[data-kind="success"] { color: #c7ffe7; }
     .pagination .pill {
       min-height: 46px;
       padding: 11px 16px;
@@ -745,6 +817,9 @@ CONSOLE_PAGE_SCRIPT = r'''
       const toggleAutoRefreshBtn = document.getElementById("toggleAutoRefreshBtn");
       const autoRefreshStatus = document.getElementById("autoRefreshStatus");
       const autoCleanupStatus = document.getElementById("autoCleanupStatus");
+      const autoRefreshCell = document.getElementById("autoRefreshCell");
+      const autoCleanupCell = document.getElementById("autoCleanupCell");
+      const actionCell = document.getElementById("actionCell");
       const resetFiltersBtn = document.getElementById("resetFiltersBtn");
       const prevPageBtn = document.getElementById("prevPageBtn");
       const nextPageBtn = document.getElementById("nextPageBtn");
@@ -761,7 +836,15 @@ CONSOLE_PAGE_SCRIPT = r'''
       const detailRaw = document.getElementById("detailRaw");
       const closeDetailBtn = document.getElementById("closeDetailBtn");
       const closeDetailBtn2 = document.getElementById("closeDetailBtn2");
-      const state = { page: 1, pageSize: 20, total: 0, totalPages: 0, lastItems: [], autoRefreshTimer: 0, autoRefreshCountdownTimer: 0, autoRefreshRemainingSeconds: 0, autoCleanupCountdownTimer: 0, autoCleanupRemainingSeconds: 0, isAutoRefreshOn: true, isAutoCleanupOn: false, isLoadingMails: false, isCleaningUp: false, autoCleanupConfiguredMinutes: 10, autoCleanupLastRunAt: "", autoCleanupLastDeletedCount: 0 };
+      const state = { page: 1, pageSize: 20, total: 0, totalPages: 0, lastItems: [], autoRefreshTimer: 0, autoRefreshCountdownTimer: 0, autoRefreshRemainingSeconds: 0, autoCleanupCountdownTimer: 0, autoCleanupRemainingSeconds: 0, isAutoRefreshOn: true, isAutoCleanupOn: false, isLoadingMails: false, isCleaningUp: false, autoCleanupConfiguredMinutes: 10, autoCleanupLastRunAt: "", autoCleanupLastDeletedCount: 0, detailBlobUrls: [] };
+
+      function releaseDetailBlobUrls() {
+        state.detailBlobUrls.forEach(function (url) {
+          try { URL.revokeObjectURL(url); }
+          catch {}
+        });
+        state.detailBlobUrls = [];
+      }
 
       function setStatus(target, message, kind) {
         target.textContent = message;
@@ -773,7 +856,9 @@ CONSOLE_PAGE_SCRIPT = r'''
       }
 
       function setActionStatus(message, kind) {
-        setStatus(actionStatus, message, kind);
+        actionStatus.textContent = message;
+        /* 操作结果单元格高亮颜色跟随操作类型。 */
+        actionCell.dataset.kind = kind || "info";
       }
 
       function getAutoRefreshSeconds() {
@@ -791,18 +876,22 @@ CONSOLE_PAGE_SCRIPT = r'''
 
       function updateAutoRefreshStatus() {
         if (!state.isAutoRefreshOn) {
-          autoRefreshStatus.textContent = "自动查询已停止";
+          autoRefreshStatus.textContent = "自动查询：已停止";
+          autoRefreshCell.dataset.active = "0";
           return;
         }
-        autoRefreshStatus.textContent = "自动查询：" + state.autoRefreshRemainingSeconds + " 秒后刷新";
+        autoRefreshStatus.textContent = "自动查询：" + state.autoRefreshRemainingSeconds + "s";
+        autoRefreshCell.dataset.active = "1";
       }
 
       function updateAutoCleanupStatus() {
         if (!state.isAutoCleanupOn) {
           autoCleanupStatus.textContent = "自动清理：已停止";
+          autoCleanupCell.dataset.active = "0";
           return;
         }
-        autoCleanupStatus.textContent = "自动清理：每 " + state.autoCleanupConfiguredMinutes + " 分钟执行一次，约 " + state.autoCleanupRemainingSeconds + " 秒后执行，清理 10 分钟前的邮件";
+        autoCleanupStatus.textContent = "自动清理：每" + state.autoCleanupConfiguredMinutes + "分钟，" + state.autoCleanupRemainingSeconds + "s后";
+        autoCleanupCell.dataset.active = "1";
       }
 
       function stopAutoRefreshCountdown() {
@@ -1009,6 +1098,17 @@ CONSOLE_PAGE_SCRIPT = r'''
         return data;
       }
 
+      async function fetchBlob(path) {
+        const headers = buildAuthHeaders();
+        if (!headers) throw new Error("缺少 API_TOKEN");
+        const response = await fetch(path, { method: "GET", headers });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || ("下载失败，状态码 " + response.status));
+        }
+        return await response.blob();
+      }
+
       function escapeHtml(value) {
         return String(value)
           .replaceAll("&", "&amp;")
@@ -1057,6 +1157,34 @@ CONSOLE_PAGE_SCRIPT = r'''
         return doc.body ? doc.body.innerHTML : dirty;
       }
 
+      function rewriteCidUrls(html, cidMap) {
+        const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
+        doc.querySelectorAll("[src],[href]").forEach(function (node) {
+          ["src", "href"].forEach(function (name) {
+            const value = String(node.getAttribute(name) || "").trim();
+            if (!value.toLowerCase().startsWith("cid:")) return;
+            const cid = value.slice(4).trim().replace(/^<|>$/g, "").toLowerCase();
+            const url = cidMap.get(cid);
+            if (url) node.setAttribute(name, url);
+          });
+        });
+        return doc.body ? doc.body.innerHTML : String(html || "");
+      }
+
+      async function buildCidBlobUrlMap(attachments) {
+        const cidMap = new Map();
+        const inlineItems = (attachments || []).filter(function (item) {
+          return String(item.contentId || "").trim() && String(item.disposition || "").toLowerCase() === "inline";
+        });
+        for (const item of inlineItems) {
+          const blob = await fetchBlob(String(item.downloadUrl || ""));
+          const url = URL.createObjectURL(blob);
+          state.detailBlobUrls.push(url);
+          cidMap.set(String(item.contentId || "").trim().toLowerCase(), url);
+        }
+        return cidMap;
+      }
+
       function buildHtmlPreviewDocument(value) {
         const cleanHtml = sanitizeHtml(value);
         return [
@@ -1069,11 +1197,13 @@ CONSOLE_PAGE_SCRIPT = r'''
         ].join("");
       }
 
-      function renderHtmlBody(value) {
+      async function renderHtmlBody(value, attachments) {
         detailBody.innerHTML = '<iframe class="mail-html-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>';
         const frame = detailBody.querySelector("iframe");
         if (!(frame instanceof HTMLIFrameElement)) return;
-        frame.srcdoc = buildHtmlPreviewDocument(value);
+        const cidMap = await buildCidBlobUrlMap(attachments || []);
+        const html = rewriteCidUrls(value, cidMap);
+        frame.srcdoc = buildHtmlPreviewDocument(html);
       }
 
       function htmlToText(value) {
@@ -1128,6 +1258,7 @@ CONSOLE_PAGE_SCRIPT = r'''
       function closeDetailModal() {
         detailModal.hidden = true;
         document.body.style.overflow = "";
+        releaseDetailBlobUrls();
       }
 
       function renderTable(items) {
@@ -1177,24 +1308,42 @@ CONSOLE_PAGE_SCRIPT = r'''
         return (bytes / (1024 * 1024)).toFixed(1) + " MB";
       }
 
+      async function downloadAttachment(item) {
+        const blob = await fetchBlob(String(item.downloadUrl || ""));
+        const url = URL.createObjectURL(blob);
+        try {
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = String(item.filename || "attachment");
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } finally {
+          setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        }
+      }
+
       function renderAttachmentList(items) {
-        if (!Array.isArray(items) || items.length === 0) {
+        const downloadable = (items || []).filter(function (a) {
+          return String(a.disposition || "attachment").toLowerCase() === "attachment";
+        });
+        if (!Array.isArray(downloadable) || downloadable.length === 0) {
           detailAttachments.innerHTML = '<div class="small">无附件</div>';
           return;
         }
-        // 每个附件渲染为一行下载链接。
-        detailAttachments.innerHTML = items.map(function (a) {
+        // 每个附件渲染为一行下载按钮，下载时通过 fetch 携带 Bearer Token。
+        detailAttachments.innerHTML = downloadable.map(function (a) {
           return [
             '<div class="attachment-row">',
             '<span class="attachment-name">' + escapeHtml(a.filename) + '</span>',
             '<span class="attachment-meta">' + escapeHtml(a.contentType) + ' · ' + formatFileSize(a.sizeBytes) + '</span>',
-            '<a class="attachment-dl" href="' + escapeHtml(a.downloadUrl) + '" download="' + escapeHtml(a.filename) + '">下载</a>',
+            '<button class="attachment-dl" type="button" data-attachment="' + escapeHtml(JSON.stringify(a)) + '">下载</button>',
             '</div>'
           ].join("");
         }).join("");
       }
 
-      function renderMailDetail(data) {
+      async function renderMailDetail(data, attachments) {
         detailTitle.textContent = data.subject || "邮件详情";
         detailMeta.innerHTML = [
           renderMetaCard("主题", data.subject),
@@ -1205,7 +1354,7 @@ CONSOLE_PAGE_SCRIPT = r'''
           renderMetaCard("日期头", data.date)
         ].join("");
         if (data.htmlBody) {
-          renderHtmlBody(data.htmlBody);
+          await renderHtmlBody(data.htmlBody, attachments || []);
         } else {
           detailBody.textContent = cleanupBodyText(data.textBody || htmlToText(data.raw)) || "没有提取到可读正文。";
         }
@@ -1245,6 +1394,7 @@ CONSOLE_PAGE_SCRIPT = r'''
 
       async function loadMailDetail(id) {
         try {
+          releaseDetailBlobUrls();
           detailTitle.textContent = "邮件详情加载中";
           detailMeta.innerHTML = "";
           detailBody.textContent = "正在整理邮件正文...";
@@ -1257,8 +1407,9 @@ CONSOLE_PAGE_SCRIPT = r'''
             fetchJson("/api/mails/" + encodeURIComponent(id), { method: "GET" }),
             fetchJson("/api/mails/" + encodeURIComponent(id) + "/attachments", { method: "GET" })
           ]);
-          renderMailDetail(data);
-          renderAttachmentList(attData.items || []);
+          const attachments = Array.isArray(attData.items) ? attData.items : [];
+          await renderMailDetail(data, attachments);
+          renderAttachmentList(attachments);
         } catch (error) {
           detailTitle.textContent = "邮件详情";
           detailBody.textContent = "详情加载失败: " + (error && error.message ? error.message : String(error));
@@ -1391,6 +1542,19 @@ CONSOLE_PAGE_SCRIPT = r'''
         const value = cell.getAttribute("data-copy") || "";
         copyCellValue(value).catch(function () {
           setActionStatus("复制失败，请手动选择内容。", "error");
+        });
+      });
+      detailAttachments.addEventListener("click", function (event) {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const button = target.closest(".attachment-dl");
+        if (!(button instanceof HTMLElement)) return;
+        const raw = button.getAttribute("data-attachment") || "{}";
+        let item = {};
+        try { item = JSON.parse(raw); }
+        catch { item = {}; }
+        downloadAttachment(item).catch(function (error) {
+          setActionStatus("附件下载失败: " + (error && error.message ? error.message : String(error)), "error");
         });
       });
       closeDetailBtn.addEventListener("click", closeDetailModal);
@@ -1536,14 +1700,19 @@ CONSOLE_PAGE_TEMPLATE = '''<!DOCTYPE html>
             <button id="cleanupBtn" class="danger" type="button">手动清理历史邮件</button>
             <button id="resetFiltersBtn" class="secondary" type="button">重置筛选</button>
           </div>
-          <div class="status-shell">
-            <div id="actionStatus" class="status muted" data-kind="info">查询、重置、清理与复制提示会显示在这里。</div>
-          </div>
-          <div class="status-shell">
-            <div id="autoRefreshStatus" class="status muted" data-kind="info">自动查询：3 秒后刷新</div>
-          </div>
-          <div class="status-shell">
-            <div id="autoCleanupStatus" class="status muted" data-kind="info">自动清理：已停止</div>
+          <div class="status-shell" id="statusBar">
+            <div class="status-cell" id="actionCell" data-kind="info">
+              <span class="status-dot"></span>
+              <span class="status-label" id="actionStatus">就绪</span>
+            </div>
+            <div class="status-cell" id="autoRefreshCell" data-active="1">
+              <span class="status-dot"></span>
+              <span class="status-label" id="autoRefreshStatus">自动查询：3s</span>
+            </div>
+            <div class="status-cell" id="autoCleanupCell" data-active="0">
+              <span class="status-dot"></span>
+              <span class="status-label" id="autoCleanupStatus">自动清理：已停止</span>
+            </div>
           </div>
           <div style="height: 16px;"></div>
           <div class="pagination">
@@ -1859,6 +2028,21 @@ def _decode_attachment_filename(part: Any) -> str:
     return decode_mail_header(filename) or "attachment"
 
 
+def _normalize_content_id(value: str) -> str:
+    """标准化 Content-ID，去掉尖括号并转为小写。"""
+    return str(value or "").strip().strip("<>").strip().lower()
+
+
+def _should_store_attachment_part(part: Any) -> bool:
+    """判断邮件分片是否需要作为附件或内联资源保存。"""
+    if part.is_multipart():
+        return False
+    disposition = (part.get_content_disposition() or "").lower()
+    if disposition in ("attachment", "inline"):
+        return True
+    return bool(part.get("Content-ID"))
+
+
 def _safe_attachment_filename(raw_name: str, attachment_id: str) -> str:
     """对附件文件名做路径安全处理，防止目录穿越。"""
     base = os.path.basename(raw_name).strip() or "attachment"
@@ -1877,14 +2061,11 @@ def _write_attachment_file(attachment_id: str, raw_name: str, data: bytes) -> st
 
 
 def extract_and_save_attachments(mail_id: str, raw_text: str) -> list[dict[str, Any]]:
-    """提取邮件所有附件，写入磁盘并返回元数据列表。"""
+    """提取邮件附件与内联资源，写入磁盘并返回元数据列表。"""
     message = parse_raw_message(raw_text)
     results: list[dict[str, Any]] = []
     for part in message.walk():
-        if part.is_multipart():
-            continue
-        disposition = (part.get_content_disposition() or "").lower()
-        if disposition != "attachment":
+        if not _should_store_attachment_part(part):
             continue
         data = part.get_payload(decode=True)
         if not isinstance(data, bytes) or not data:
@@ -1894,11 +2075,14 @@ def extract_and_save_attachments(mail_id: str, raw_text: str) -> list[dict[str, 
         attachment_id = str(uuid4())
         raw_name = _decode_attachment_filename(part)
         filename = _write_attachment_file(attachment_id, raw_name, data)
+        disposition = (part.get_content_disposition() or "inline").lower() or "inline"
         results.append({
             "id": attachment_id,
             "mail_id": mail_id,
             "filename": raw_name,
             "content_type": part.get_content_type() or "application/octet-stream",
+            "content_id": _normalize_content_id(part.get("Content-ID")),
+            "disposition": disposition,
             "size_bytes": len(data),
             "file_path": filename,
         })
@@ -1912,8 +2096,8 @@ def insert_attachments(conn: Any, attachments: list[dict[str, Any]]) -> None:
     with conn.cursor() as cur:
         for a in attachments:
             cur.execute(SQL_INSERT_ATTACHMENT, [
-                a["id"], a["mail_id"], a["filename"],
-                a["content_type"], a["size_bytes"], a["file_path"],
+                a["id"], a["mail_id"], a["filename"], a["content_type"],
+                a["content_id"], a["disposition"], a["size_bytes"], a["file_path"],
             ])
 
 
@@ -2102,6 +2286,8 @@ def ensure_schema() -> None:
             cur.execute(SQL_CREATE_INDEX_RCPT_TO_RECEIVED_AT)
             cur.execute(SQL_CREATE_AUTO_CLEANUP_TABLE)
             cur.execute(SQL_CREATE_ATTACHMENTS_TABLE)
+            cur.execute(SQL_ALTER_ATTACHMENTS_ADD_CONTENT_ID)
+            cur.execute(SQL_ALTER_ATTACHMENTS_ADD_DISPOSITION)
             cur.execute(SQL_CREATE_INDEX_ATTACHMENTS_MAIL_ID)
         conn.commit()
     # 确保附件目录存在。
@@ -2231,7 +2417,8 @@ def get_mail_by_id_and_address(address: str, mail_id: str) -> dict[str, Any] | N
 def list_attachments_by_mail(mail_id: str) -> list[dict[str, Any]]:
     """查询指定邮件的所有附件元数据。"""
     sql = f"""
-    SELECT id, mail_id, filename, content_type, size_bytes, file_path, created_at
+    SELECT id, mail_id, filename, content_type, content_id, disposition,
+           size_bytes, file_path, created_at
     FROM {TABLE_ATTACHMENTS} WHERE mail_id = %s ORDER BY created_at;
     """
     with get_connection() as conn:
@@ -2248,6 +2435,8 @@ def map_attachment_row(row: dict[str, Any]) -> dict[str, Any]:
         "mailId": str(row["mail_id"]),
         "filename": str(row["filename"]),
         "contentType": str(row["content_type"]),
+        "contentId": str(row.get("content_id") or ""),
+        "disposition": str(row.get("disposition") or "attachment"),
         "sizeBytes": int(row["size_bytes"]),
         "downloadUrl": f"/api/attachments/{row['id']}/download",
     }
@@ -2256,7 +2445,8 @@ def map_attachment_row(row: dict[str, Any]) -> dict[str, Any]:
 def get_attachment_by_id(attachment_id: str) -> dict[str, Any] | None:
     """查询单条附件元数据。"""
     sql = f"""
-    SELECT id, mail_id, filename, content_type, size_bytes, file_path
+    SELECT id, mail_id, filename, content_type, content_id, disposition,
+           size_bytes, file_path
     FROM {TABLE_ATTACHMENTS} WHERE id = %s LIMIT 1;
     """
     with get_connection() as conn:
@@ -2560,9 +2750,27 @@ def handle_list_attachments(mail_id: str, request: Request) -> dict[str, Any]:
     return {"mailId": mail_id, "items": items}
 
 
+def _build_content_disposition(filename: str) -> str:
+    """构建兼容中文文件名的 Content-Disposition 头，遵循 RFC 5987。"""
+    from urllib.parse import quote
+    ascii_name = filename.encode("ascii", "replace").decode("ascii")
+    utf8_name = quote(filename, safe="")
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{utf8_name}"
+
+
+def _stream_file(file_path: str, chunk_size: int = 64 * 1024):
+    """以生成器方式流式读取文件内容。"""
+    with open(file_path, "rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            yield chunk
+
+
 @app.get("/api/attachments/{attachment_id}/download")
-def handle_download_attachment(attachment_id: str, request: Request) -> FileResponse:
-    """下载指定附件文件。"""
+def handle_download_attachment(attachment_id: str, request: Request):
+    """流式下载指定附件文件，支持中文文件名。"""
     require_api_token(request)
     row = get_attachment_by_id(attachment_id)
     if not row:
@@ -2570,10 +2778,12 @@ def handle_download_attachment(attachment_id: str, request: Request) -> FileResp
     file_path = os.path.join(ATTACHMENTS_DIR, str(row["file_path"]))
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Attachment file missing.")
-    return FileResponse(
-        path=file_path,
+    # 使用原始文件名构建下载头，流式返回文件内容。
+    disposition = _build_content_disposition(str(row["filename"]))
+    return StreamingResponse(
+        content=_stream_file(file_path),
         media_type=str(row["content_type"]),
-        filename=str(row["filename"]),
+        headers={"Content-Disposition": disposition},
     )
 
 
