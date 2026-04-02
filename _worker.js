@@ -62,6 +62,14 @@ const HTML_RESPONSE_HEADERS = {
   },
 };
 
+const SCRIPT_RESPONSE_HEADERS = {
+  headers: {
+    "Content-Type": "application/javascript; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+  },
+};
+
 const JSON_RESPONSE_HEADERS = {
   headers: {
     "Content-Type": "application/json; charset=utf-8",
@@ -436,197 +444,1206 @@ function buildMailWhereClause(filters) {
   };
 }
 
-/**
- * 渲染首页 HTML
- * @returns {string}
- */
-function renderHomePage() {
-  
-  return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Email Workers Mail Query</title>
-  <style>
+
+const SHARED_PAGE_STYLE = `
     :root {
-      color-scheme: light dark;
+      --panel: rgba(9, 18, 34, 0.78);
+      --panel-strong: rgba(6, 14, 27, 0.92);
+      --line: rgba(148, 163, 184, 0.16);
+      --line-strong: rgba(148, 163, 184, 0.28);
+      --text: #f8fafc;
+      --text-soft: #b7c4d8;
+      --accent: #ff9f43;
+      --accent-strong: #ff6b2c;
+      --danger: #ff5d73;
+      --success: #34d399;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+      color-scheme: dark;
     }
     * {
       box-sizing: border-box;
     }
+    html {
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top left, rgba(255, 159, 67, 0.16), transparent 30%),
+        radial-gradient(circle at right 20%, rgba(79, 209, 197, 0.14), transparent 28%),
+        linear-gradient(180deg, #08101d 0%, #050b14 100%);
+    }
     body {
       margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0f172a;
-      color: #e5e7eb;
-      line-height: 1.5;
+      min-height: 100vh;
+      font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      line-height: 1.6;
+      background: transparent;
+    }
+    button, input, select, textarea {
+      font: inherit;
+    }
+    .page-shell {
+      position: relative;
+      overflow: hidden;
+      min-height: 100vh;
+    }
+    .page-shell::before,
+    .page-shell::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      filter: blur(24px);
+      opacity: 0.55;
+      pointer-events: none;
+    }
+    .page-shell::before {
+      width: 320px;
+      height: 320px;
+      top: 80px;
+      right: -60px;
+      background: rgba(255, 159, 67, 0.18);
+      animation: drift 12s ease-in-out infinite;
+    }
+    .page-shell::after {
+      width: 260px;
+      height: 260px;
+      bottom: 120px;
+      left: -40px;
+      background: rgba(79, 209, 197, 0.16);
+      animation: drift 14s ease-in-out infinite reverse;
     }
     .wrap {
-      max-width: 1280px;
+      position: relative;
+      z-index: 1;
+      max-width: 1360px;
       margin: 0 auto;
-      padding: 20px;
+      padding: 32px 20px 40px;
     }
-    .grid {
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .hero {
       display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
-      gap: 16px;
+      grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+      gap: 20px;
+      margin-bottom: 20px;
+      padding: 28px;
+      background:
+        linear-gradient(135deg, rgba(255, 159, 67, 0.12), transparent 42%),
+        linear-gradient(160deg, rgba(79, 209, 197, 0.08), transparent 62%),
+        var(--panel-strong);
     }
-    @media (max-width: 980px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
-    }
-    .card {
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 16px;
-      padding: 16px;
-      margin-bottom: 16px;
-      backdrop-filter: blur(8px);
+    .eyebrow {
+      display: inline-flex;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 159, 67, 0.25);
+      background: rgba(255, 159, 67, 0.12);
+      color: #ffd6a8;
+      font-size: 12px;
+      letter-spacing: 0.18em;
     }
     h1, h2, h3 {
-      margin-top: 0;
-      margin-bottom: 12px;
+      margin: 0;
+      letter-spacing: -0.02em;
     }
-    .muted {
-      opacity: 0.8;
+    h1 {
+      margin-top: 14px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 1;
     }
-    .row {
+    h2 {
+      font-size: 24px;
+    }
+    .hero-copy {
+      max-width: 760px;
+    }
+    .hero-text,
+    .muted,
+    .small,
+    .section-note {
+      color: var(--text-soft);
+    }
+    .hero-actions,
+    .toolbar,
+    .top-links,
+    .meta-pills {
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
-      align-items: end;
-      margin-bottom: 12px;
+      gap: 10px;
     }
-    .field {
+    .pagination {
       display: flex;
-      flex-direction: column;
-      gap: 6px;
-      min-width: 160px;
-      flex: 1 1 180px;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 10px;
     }
-    .field.wide {
-      flex: 2 1 320px;
+    .hero-actions {
+      margin-top: 18px;
     }
-    label {
-      font-size: 13px;
-      opacity: 0.9;
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      font-size: 12px;
+      letter-spacing: 0.04em;
     }
-    input, select, button, textarea {
-      font: inherit;
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(255,255,255,0.08);
-      color: inherit;
-      padding: 10px 12px;
-      outline: none;
+    .panel-note {
+      display: grid;
+      gap: 10px;
+      padding: 18px;
+      border-radius: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
     }
-    button {
-      cursor: pointer;
+    .panel-note strong {
+      font-size: 24px;
+    }
+    .layout-grid {
+      display: grid;
+      gap: 20px;
+    }
+    .section-panel {
+      padding: 24px;
+      background: var(--panel);
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+    .section-head h2 {
+      margin-bottom: 6px;
+    }
+    .section-tag {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(79, 209, 197, 0.12);
+      border: 1px solid rgba(79, 209, 197, 0.24);
+      color: #baf4ee;
+      font-size: 12px;
       white-space: nowrap;
     }
-    button.primary {
-      background: #2563eb;
-      border-color: #2563eb;
-      color: #fff;
+    .row {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 14px;
     }
-    button.danger {
-      background: #b91c1c;
-      border-color: #b91c1c;
-      color: #fff;
+    .field {
+      display: grid;
+      gap: 8px;
+      grid-column: span 3;
+      min-width: 0;
     }
-    button.secondary {
-      background: rgba(255,255,255,0.12);
+    .field.wide {
+      grid-column: span 6;
+    }
+    label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: rgba(255, 255, 255, 0.76);
+      text-transform: uppercase;
+    }
+    input, select, textarea {
+      width: 100%;
+      min-height: 48px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s ease, transform 0.2s ease,
+        background-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: rgba(255, 159, 67, 0.62);
+      background: rgba(255, 255, 255, 0.06);
+      box-shadow: 0 0 0 4px rgba(255, 159, 67, 0.12);
+      transform: translateY(-1px);
+    }
+    input::placeholder {
+      color: rgba(183, 196, 216, 0.64);
+    }
+    button,
+    .nav-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 11px 16px;
+      border-radius: 16px;
+      border: 1px solid transparent;
+      color: var(--text);
+      cursor: pointer;
+      white-space: nowrap;
+      text-decoration: none;
+      transition: transform 0.18s ease, box-shadow 0.18s ease,
+        border-color 0.18s ease, opacity 0.18s ease;
+    }
+    button:hover,
+    .nav-link:hover {
+      transform: translateY(-1px);
+    }
+    .primary,
+    .nav-link.primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      box-shadow: 0 12px 30px rgba(255, 107, 44, 0.28);
+    }
+    .secondary,
+    .nav-link.secondary {
+      border-color: var(--line);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .danger {
+      background: linear-gradient(135deg, #ff6d7d, var(--danger));
+      box-shadow: 0 12px 30px rgba(255, 93, 115, 0.2);
     }
     button:disabled {
-      opacity: 0.6;
+      opacity: 0.55;
       cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .status-shell {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(79, 209, 197, 0.18);
+      background: rgba(79, 209, 197, 0.08);
+    }
+    .status {
+      min-height: 24px;
+      font-size: 14px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .status[data-kind="error"] {
+      color: #ffd2d8;
+    }
+    .status[data-kind="success"] {
+      color: #c7ffe7;
+    }
+    .pagination-field {
+      display: grid;
+      gap: 8px;
+      width: 120px;
+      margin: 0;
+    }
+    .pagination-field input {
+      min-height: 46px;
+      text-align: center;
+    }
+    .pagination .pill {
+      min-height: 46px;
+      padding: 11px 16px;
+      border-radius: 16px;
+      font-size: 14px;
+      letter-spacing: 0;
     }
     .table-wrap {
+      width: 100%;
+      max-width: 100%;
       overflow-x: auto;
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.08);
+      overflow-y: hidden;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
     }
     table {
       width: 100%;
+      min-width: 0;
+      table-layout: fixed;
       border-collapse: collapse;
-      min-width: 980px;
     }
     th, td {
+      min-width: 0;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
       text-align: left;
-      padding: 10px 12px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
       vertical-align: top;
       font-size: 14px;
     }
     th {
-      background: rgba(255,255,255,0.04);
       position: sticky;
       top: 0;
-    }
-    .subject {
-      max-width: 360px;
-      word-break: break-word;
-    }
-    .pill {
-      display: inline-block;
+      background: rgba(7, 17, 31, 0.96);
+      color: rgba(255, 255, 255, 0.82);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
       font-size: 12px;
-      padding: 4px 8px;
-      border-radius: 999px;
-      background: rgba(255,255,255,0.1);
+      z-index: 1;
     }
-    .status {
-      min-height: 24px;
-      white-space: pre-wrap;
-      word-break: break-word;
-      font-size: 14px;
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.04);
     }
-    pre {
-      margin: 0;
-      padding: 14px;
-      border-radius: 12px;
-      background: rgba(0,0,0,0.22);
-      overflow: auto;
-      white-space: pre-wrap;
-      word-break: break-word;
-      max-height: 68vh;
+    .col-time {
+      width: 180px;
     }
-    .toolbar {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
+    .col-to {
+      width: 180px;
     }
-    .pagination {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
+    .col-from {
+      width: 200px;
     }
-    .small {
-      font-size: 13px;
-      opacity: 0.9;
+    .col-subject {
+      width: 260px;
+    }
+    .col-message-id {
+      width: 220px;
+    }
+    .col-actions {
+      width: 120px;
+    }
+    .copy-cell {
+      max-width: 100%;
+      cursor: pointer;
+    }
+    .copy-text {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.45;
     }
     .empty {
-      padding: 16px;
-      opacity: 0.8;
+      padding: 28px 16px;
+      text-align: center;
+      color: var(--text-soft);
     }
-  </style>
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(3, 7, 15, 0.72);
+      backdrop-filter: blur(10px);
+    }
+    .modal-backdrop[hidden] {
+      display: none;
+    }
+    .modal {
+      width: min(980px, 100%);
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+      padding: 22px;
+      border-radius: 28px;
+      border: 1px solid var(--line-strong);
+      background: rgba(6, 14, 27, 0.97);
+      box-shadow: var(--shadow);
+    }
+    .modal-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+    .detail-grid {
+      display: grid;
+      gap: 16px;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .meta-card,
+    .detail-card {
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .meta-card strong,
+    .detail-card strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: var(--text-soft);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .meta-card span {
+      display: block;
+      word-break: break-word;
+    }
+    .body-box,
+    .raw-box,
+    .code-box {
+      margin: 0;
+      padding: 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      background: rgba(4, 9, 18, 0.88);
+      color: #dce7f8;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: "JetBrains Mono", "Fira Code", monospace;
+      overflow: auto;
+    }
+    .header-table {
+      width: 100%;
+      min-width: 0;
+    }
+    .header-table td {
+      padding: 10px 12px;
+      font-size: 13px;
+    }
+    .header-table td:first-child {
+      width: 180px;
+      color: var(--text-soft);
+    }
+    .doc-grid {
+      display: grid;
+      gap: 16px;
+    }
+    .doc-card {
+      padding: 20px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .doc-card h3 {
+      margin-bottom: 10px;
+      font-size: 22px;
+    }
+    .doc-card p,
+    .doc-card li,
+    .doc-card .small {
+      color: var(--text-soft);
+    }
+    .doc-list {
+      margin: 10px 0 0;
+      padding-left: 18px;
+    }
+    .top-links {
+      margin-top: 16px;
+    }
+    @keyframes drift {
+      0%, 100% {
+        transform: translate3d(0, 0, 0) scale(1);
+      }
+      50% {
+        transform: translate3d(0, -12px, 0) scale(1.04);
+      }
+    }
+    @media (max-width: 900px) {
+      .hero,
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 760px) {
+      .wrap {
+        padding: 18px 14px 28px;
+      }
+      .hero,
+      .section-panel,
+      .modal {
+        padding: 18px;
+        border-radius: 22px;
+      }
+      .section-head,
+      .modal-top {
+        flex-direction: column;
+      }
+      .field,
+      .field.wide {
+        grid-column: span 12;
+      }
+      .pagination-field {
+        width: 100%;
+        max-width: none;
+      }
+      h1 {
+        font-size: 38px;
+      }
+      .modal-backdrop {
+        padding: 12px;
+      }
+    }
+`;
+
+const CONSOLE_PAGE_SCRIPT = String.raw`
+    (function () {
+      const STORAGE_TOKEN_KEY = "mail_worker_api_token";
+      const STORAGE_CLEANUP_MINUTES_KEY = "mail_worker_cleanup_minutes";
+      const STORAGE_AUTO_REFRESH_SECONDS_KEY = "mail_worker_auto_refresh_seconds";
+      const tokenInput = document.getElementById("tokenInput");
+      const saveTokenBtn = document.getElementById("saveTokenBtn");
+      const verifyTokenBtn = document.getElementById("verifyTokenBtn");
+      const clearTokenBtn = document.getElementById("clearTokenBtn");
+      const rcptToInput = document.getElementById("rcptToInput");
+      const afterInput = document.getElementById("afterInput");
+      const beforeInput = document.getElementById("beforeInput");
+      const pageSizeSelect = document.getElementById("pageSizeSelect");
+      const cleanupMinutesInput = document.getElementById("cleanupMinutesInput");
+      const autoRefreshSecondsInput = document.getElementById("autoRefreshSecondsInput");
+      const pageInput = document.getElementById("pageInput");
+      const searchBtn = document.getElementById("searchBtn");
+      const cleanupBtn = document.getElementById("cleanupBtn");
+      const toggleAutoCleanupBtn = document.getElementById("toggleAutoCleanupBtn");
+      const toggleAutoRefreshBtn = document.getElementById("toggleAutoRefreshBtn");
+      const autoRefreshStatus = document.getElementById("autoRefreshStatus");
+      const autoCleanupStatus = document.getElementById("autoCleanupStatus");
+      const resetFiltersBtn = document.getElementById("resetFiltersBtn");
+      const prevPageBtn = document.getElementById("prevPageBtn");
+      const jumpPageBtn = document.getElementById("jumpPageBtn");
+      const nextPageBtn = document.getElementById("nextPageBtn");
+      const paginationInfo = document.getElementById("paginationInfo");
+      const authStatus = document.getElementById("authStatus");
+      const actionStatus = document.getElementById("actionStatus");
+      const mailTableBody = document.getElementById("mailTableBody");
+      const detailModal = document.getElementById("detailModal");
+      const detailTitle = document.getElementById("detailTitle");
+      const detailMeta = document.getElementById("detailMeta");
+      const detailBody = document.getElementById("detailBody");
+      const detailHeaders = document.getElementById("detailHeaders");
+      const detailRaw = document.getElementById("detailRaw");
+      const closeDetailBtn = document.getElementById("closeDetailBtn");
+      const closeDetailBtn2 = document.getElementById("closeDetailBtn2");
+      const state = { page: 1, pageSize: 20, total: 0, totalPages: 0, lastItems: [], autoRefreshTimer: 0, autoRefreshCountdownTimer: 0, autoRefreshRemainingSeconds: 0, autoCleanupTimer: 0, autoCleanupCountdownTimer: 0, autoCleanupRemainingSeconds: 0, isAutoRefreshOn: true, isAutoCleanupOn: false, isLoadingMails: false, isCleaningUp: false };
+
+      function setStatus(target, message, kind) {
+        target.textContent = message;
+        target.dataset.kind = kind || "info";
+      }
+
+      function setAuthStatus(message, kind) {
+        setStatus(authStatus, message, kind);
+      }
+
+      function setActionStatus(message, kind) {
+        setStatus(actionStatus, message, kind);
+      }
+
+      function getAutoRefreshSeconds() {
+        const seconds = parseInt(autoRefreshSecondsInput.value || "0", 10) || 0;
+        return seconds >= 1 ? seconds : 3;
+      }
+
+      function updateAutoRefreshButton() {
+        toggleAutoRefreshBtn.textContent = state.isAutoRefreshOn ? "停止自动查询" : "开启自动查询";
+      }
+
+      function updateAutoCleanupButton() {
+        toggleAutoCleanupBtn.textContent = state.isAutoCleanupOn ? "停止自动清理" : "开启自动清理";
+      }
+
+      function updateAutoRefreshStatus() {
+        if (!state.isAutoRefreshOn) {
+          autoRefreshStatus.textContent = "自动查询已停止。";
+          return;
+        }
+        autoRefreshStatus.textContent = "收件中，" + state.autoRefreshRemainingSeconds + " 秒后自动查询";
+      }
+
+      function updateAutoCleanupStatus() {
+        if (!state.isAutoCleanupOn) {
+          autoCleanupStatus.textContent = "自动清理已停止。";
+          return;
+        }
+        autoCleanupStatus.textContent = "自动清理已开启，" + state.autoCleanupRemainingSeconds + " 秒后清理 " + cleanupMinutesInput.value + " 分钟前的历史邮件";
+      }
+
+      function stopAutoRefreshCountdown() {
+        if (!state.autoRefreshCountdownTimer) return;
+        clearInterval(state.autoRefreshCountdownTimer);
+        state.autoRefreshCountdownTimer = 0;
+      }
+
+      function stopAutoCleanupCountdown() {
+        if (!state.autoCleanupCountdownTimer) return;
+        clearInterval(state.autoCleanupCountdownTimer);
+        state.autoCleanupCountdownTimer = 0;
+      }
+
+      function stopAutoRefresh() {
+        if (state.autoRefreshTimer) {
+          clearInterval(state.autoRefreshTimer);
+          state.autoRefreshTimer = 0;
+        }
+        stopAutoRefreshCountdown();
+      }
+
+      function stopAutoCleanup() {
+        if (state.autoCleanupTimer) {
+          clearInterval(state.autoCleanupTimer);
+          state.autoCleanupTimer = 0;
+        }
+        stopAutoCleanupCountdown();
+      }
+
+      function getCleanupMinutes() {
+        const minutes = parseInt(cleanupMinutesInput.value || "0", 10) || 0;
+        return minutes >= 1 ? minutes : 10;
+      }
+
+      function saveCleanupMinutesInput() {
+        const minutes = parseInt(cleanupMinutesInput.value || "0", 10) || 0;
+        if (minutes >= 1) saveValue(STORAGE_CLEANUP_MINUTES_KEY, String(minutes));
+      }
+
+      function resetAutoRefreshCountdown() {
+        state.autoRefreshRemainingSeconds = getAutoRefreshSeconds();
+        updateAutoRefreshStatus();
+      }
+
+      function resetAutoCleanupCountdown() {
+        state.autoCleanupRemainingSeconds = getCleanupMinutes() * 60;
+        updateAutoCleanupStatus();
+      }
+
+      function startAutoRefreshCountdown() {
+        stopAutoRefreshCountdown();
+        resetAutoRefreshCountdown();
+        state.autoRefreshCountdownTimer = window.setInterval(function () {
+          if (!state.isAutoRefreshOn || document.hidden) return;
+          if (state.autoRefreshRemainingSeconds > 1) {
+            state.autoRefreshRemainingSeconds -= 1;
+          } else {
+            state.autoRefreshRemainingSeconds = getAutoRefreshSeconds();
+          }
+          updateAutoRefreshStatus();
+        }, 1000);
+      }
+
+      function startAutoCleanupCountdown() {
+        stopAutoCleanupCountdown();
+        resetAutoCleanupCountdown();
+        state.autoCleanupCountdownTimer = window.setInterval(function () {
+          if (!state.isAutoCleanupOn || document.hidden) return;
+          if (state.autoCleanupRemainingSeconds > 1) {
+            state.autoCleanupRemainingSeconds -= 1;
+          } else {
+            state.autoCleanupRemainingSeconds = getCleanupMinutes() * 60;
+          }
+          updateAutoCleanupStatus();
+        }, 1000);
+      }
+
+      function startAutoRefresh() {
+        stopAutoRefresh();
+        const seconds = getAutoRefreshSeconds();
+        resetAutoRefreshCountdown();
+        startAutoRefreshCountdown();
+        state.autoRefreshTimer = window.setInterval(function () {
+          if (!state.isAutoRefreshOn || document.hidden || state.isLoadingMails) return;
+          loadMails(state.page, { loadingText: "收件中", isAutoRefresh: true });
+          state.autoRefreshRemainingSeconds = seconds;
+          updateAutoRefreshStatus();
+        }, seconds * 1000);
+      }
+
+      function startAutoCleanup() {
+        stopAutoCleanup();
+        const seconds = getCleanupMinutes() * 60;
+        resetAutoCleanupCountdown();
+        startAutoCleanupCountdown();
+        state.autoCleanupTimer = window.setInterval(function () {
+          if (!state.isAutoCleanupOn || document.hidden || state.isCleaningUp) return;
+          cleanupHistoryMails({ isAuto: true });
+          state.autoCleanupRemainingSeconds = seconds;
+          updateAutoCleanupStatus();
+        }, seconds * 1000);
+      }
+
+      function syncAutoRefresh() {
+        updateAutoRefreshButton();
+        if (!state.isAutoRefreshOn) {
+          stopAutoRefresh();
+          return updateAutoRefreshStatus();
+        }
+        startAutoRefresh();
+      }
+
+      function syncAutoCleanup() {
+        updateAutoCleanupButton();
+        if (!state.isAutoCleanupOn) {
+          stopAutoCleanup();
+          return updateAutoCleanupStatus();
+        }
+        startAutoCleanup();
+      }
+
+      function getSavedToken() {
+        try { return localStorage.getItem(STORAGE_TOKEN_KEY) || ""; }
+        catch { return ""; }
+      }
+
+      function getSavedValue(key, fallback) {
+        try { return localStorage.getItem(key) || fallback; }
+        catch { return fallback; }
+      }
+
+      function saveValue(key, value) {
+        try { localStorage.setItem(key, String(value)); }
+        catch {}
+      }
+
+      function saveToken(token) {
+        localStorage.setItem(STORAGE_TOKEN_KEY, token);
+      }
+
+      function clearToken() {
+        localStorage.removeItem(STORAGE_TOKEN_KEY);
+      }
+
+      function getToken() {
+        return tokenInput.value.trim();
+      }
+
+      function requireTokenOnClient() {
+        const token = getToken();
+        if (!token) {
+          setAuthStatus("请先输入并保存 API_TOKEN。", "error");
+          return "";
+        }
+        return token;
+      }
+
+      function buildAuthHeaders(extraHeaders) {
+        const token = requireTokenOnClient();
+        if (!token) return null;
+        const headers = new Headers(extraHeaders || {});
+        headers.set("Authorization", "Bearer " + token);
+        return headers;
+      }
+
+      async function fetchJson(path, init) {
+        const headers = buildAuthHeaders(init && init.headers ? init.headers : {});
+        if (!headers) throw new Error("缺少 API_TOKEN");
+        const response = await fetch(path, { ...init, headers });
+        const text = await response.text();
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; }
+        catch { data = { rawText: text }; }
+        if (!response.ok) {
+          const message = data && data.error ? data.error : ("请求失败，状态码 " + response.status);
+          throw new Error(message);
+        }
+        return data;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function formatDateTimeDisplay(value) {
+        if (!value) return "";
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+      }
+
+      function toIsoFromLocalInput(value) {
+        if (!value) return "";
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+      }
+
+      function decodeQuotedPrintable(text) {
+        return String(text || "")
+          .replace(/=\r?\n/g, "")
+          .replace(/=([A-Fa-f0-9]{2})/g, function (_, hex) {
+            return String.fromCharCode(parseInt(hex, 16));
+          });
+      }
+
+      function htmlToText(value) {
+        const doc = new DOMParser().parseFromString(String(value || ""), "text/html");
+        return doc.body ? (doc.body.textContent || "") : String(value || "");
+      }
+
+      function splitRawContent(raw) {
+        const parts = String(raw || "").split(/\r?\n\r?\n/);
+        parts.shift();
+        return parts.join("\n\n");
+      }
+
+      function cleanupBodyText(value) {
+        return String(value || "")
+          .replace(/^--.*$/gm, "")
+          .replace(/^Content-[^\n]*$/gmi, "")
+          .replace(/^charset=[^\n]*$/gmi, "")
+          .replace(/^boundary=[^\n]*$/gmi, "")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+      }
+
+      function buildReadableBody(raw) {
+        const body = splitRawContent(raw);
+        const decoded = /=([A-Fa-f0-9]{2})/.test(body) ? decodeQuotedPrintable(body) : body;
+        const plain = /<[a-z][\s\S]*>/i.test(decoded) ? htmlToText(decoded) : decoded;
+        return cleanupBodyText(plain) || "没有提取到可读正文。";
+      }
+
+      function renderMetaCard(label, value) {
+        return [
+          '<div class="meta-card"><strong>',
+          escapeHtml(label),
+          '</strong><span>',
+          escapeHtml(value || "-"),
+          '</span></div>'
+        ].join("");
+      }
+
+      function renderCopyCell(value, className) {
+        const text = String(value || "");
+        return [
+          '<td class="copy-cell ',
+          className,
+          '" title="点击复制完整内容" data-copy="',
+          escapeHtml(text),
+          '"><span class="copy-text">',
+          escapeHtml(text || "-"),
+          '</span></td>'
+        ].join("");
+      }
+
+      function renderHeaderTable(headers) {
+        const entries = Object.entries(headers || {});
+        if (entries.length === 0) return '<div class="small">暂无头信息</div>';
+        return [
+          '<table class="header-table"><tbody>',
+          entries.map(function (entry) {
+            return '<tr><td>' + escapeHtml(entry[0]) + '</td><td>' + escapeHtml(entry[1]) + '</td></tr>';
+          }).join(""),
+          '</tbody></table>'
+        ].join("");
+      }
+
+      function openDetailModal() {
+        detailModal.hidden = false;
+        document.body.style.overflow = "hidden";
+      }
+
+      function closeDetailModal() {
+        detailModal.hidden = true;
+        document.body.style.overflow = "";
+      }
+
+      function renderTable(items) {
+        if (!Array.isArray(items) || items.length === 0) {
+          mailTableBody.innerHTML = '<tr><td colspan="6" class="empty">没有符合条件的邮件</td></tr>';
+          return;
+        }
+        const rows = items.map(function (item) {
+          return [
+            '<tr>',
+            '<td class="col-time">', escapeHtml(formatDateTimeDisplay(item.receivedAt)), '</td>',
+            '<td class="col-to">', escapeHtml(item.to || ""), '</td>',
+            renderCopyCell(item.from, 'col-from'),
+            renderCopyCell(item.subject, 'col-subject'),
+            renderCopyCell(item.messageId, 'col-message-id'),
+            '<td class="col-actions"><button class="secondary detail-btn" type="button" data-id="', escapeHtml(item.id || ""), '">查看详情</button></td>',
+            '</tr>'
+          ].join("");
+        }).join("");
+        mailTableBody.innerHTML = rows;
+      }
+
+      function updatePaginationInfo() {
+        paginationInfo.textContent = "第 " + state.page + " / " + (state.totalPages || 1) + " 页，共 " + state.total + " 封";
+        pageInput.value = String(state.page);
+        prevPageBtn.disabled = state.page <= 1;
+        nextPageBtn.disabled = state.totalPages === 0 || state.page >= state.totalPages;
+      }
+
+      function getCurrentQueryParams(pageOverride) {
+        const params = new URLSearchParams();
+        const rcptTo = rcptToInput.value.trim();
+        const after = toIsoFromLocalInput(afterInput.value);
+        const before = toIsoFromLocalInput(beforeInput.value);
+        const page = pageOverride || parseInt(pageInput.value || "1", 10) || 1;
+        const pageSize = parseInt(pageSizeSelect.value || "20", 10) || 20;
+        if (rcptTo) params.set("rcptTo", rcptTo);
+        if (after) params.set("after", after);
+        if (before) params.set("before", before);
+        params.set("page", String(page));
+        params.set("pageSize", String(pageSize));
+        return { params, page, pageSize };
+      }
+
+      function renderMailDetail(data) {
+        detailTitle.textContent = data.subject || "邮件详情";
+        detailMeta.innerHTML = [
+          renderMetaCard("主题", data.subject),
+          renderMetaCard("发件人", data.from),
+          renderMetaCard("收件人", data.to),
+          renderMetaCard("接收时间", formatDateTimeDisplay(data.receivedAt || data.date)),
+          renderMetaCard("Message-ID", data.messageId),
+          renderMetaCard("日期头", data.date)
+        ].join("");
+        detailBody.textContent = buildReadableBody(data.raw);
+        detailHeaders.innerHTML = renderHeaderTable(data.headers);
+        detailRaw.textContent = data.raw || "暂无原始内容";
+      }
+
+      async function loadMails(pageOverride, options) {
+        const loadingText = options && options.loadingText ? String(options.loadingText) : "查询中...";
+        const isAutoRefresh = !!(options && options.isAutoRefresh);
+        if (state.isLoadingMails) return;
+        state.isLoadingMails = true;
+        try {
+          const current = getCurrentQueryParams(pageOverride);
+          state.page = current.page;
+          state.pageSize = current.pageSize;
+          setActionStatus(loadingText, "info");
+          const data = await fetchJson("/api/mails?" + current.params.toString(), { method: "GET" });
+          state.total = Number(data.total || 0);
+          state.totalPages = Number(data.totalPages || 0);
+          state.page = Number(data.page || current.page);
+          state.pageSize = Number(data.pageSize || current.pageSize);
+          state.lastItems = Array.isArray(data.items) ? data.items : [];
+          renderTable(state.lastItems);
+          updatePaginationInfo();
+          if (!isAutoRefresh) setActionStatus("查询成功。", "success");
+        } catch (error) {
+          renderTable([]);
+          state.total = 0;
+          state.totalPages = 0;
+          updatePaginationInfo();
+          setActionStatus("查询失败: " + (error && error.message ? error.message : String(error)), "error");
+        } finally {
+          state.isLoadingMails = false;
+        }
+      }
+
+      async function loadMailDetail(id) {
+        try {
+          detailTitle.textContent = "邮件详情加载中";
+          detailMeta.innerHTML = "";
+          detailBody.textContent = "正在整理邮件正文...";
+          detailHeaders.innerHTML = "";
+          detailRaw.textContent = "";
+          openDetailModal();
+          const data = await fetchJson("/api/mails/" + encodeURIComponent(id), { method: "GET" });
+          renderMailDetail(data);
+        } catch (error) {
+          detailTitle.textContent = "邮件详情";
+          detailBody.textContent = "详情加载失败: " + (error && error.message ? error.message : String(error));
+        }
+      }
+
+      async function verifyToken() {
+        try {
+          setAuthStatus("正在验证 Token...", "info");
+          await fetchJson("/api/auth/verify", { method: "GET" });
+          setAuthStatus("Token 验证成功。", "success");
+        } catch (error) {
+          setAuthStatus("Token 验证失败: " + (error && error.message ? error.message : String(error)), "error");
+        }
+      }
+
+      async function cleanupHistoryMails(options) {
+        const token = requireTokenOnClient();
+        if (!token) return;
+        const isAuto = !!(options && options.isAuto);
+        const minutes = getCleanupMinutes();
+        if (minutes < 1) {
+          setActionStatus("请输入大于 0 的清理分钟数。", "error");
+          return;
+        }
+        const cutoff = new Date(Date.now() - minutes * 60 * 1000);
+        if (!isAuto) {
+          const confirmed = confirm("确定清理 " + minutes + " 分钟前的所有历史邮件吗？\n清理阈值: " + cutoff.toLocaleString());
+          if (!confirmed) return;
+        }
+        state.isCleaningUp = true;
+        try {
+          setActionStatus((isAuto ? "自动" : "正在") + "清理 " + minutes + " 分钟前的历史邮件...", "info");
+          const data = await fetchJson("/api/admin/cleanup-history", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ before: cutoff.toISOString() })
+          });
+          setActionStatus("清理完成。删除数量: " + String(data.deletedCount || 0) + "，阈值: " + String(data.before || ""), "success");
+          await loadMails(1);
+        } catch (error) {
+          setActionStatus("清理失败: " + (error && error.message ? error.message : String(error)), "error");
+        } finally {
+          state.isCleaningUp = false;
+        }
+      }
+
+      function resetFilters() {
+        rcptToInput.value = "";
+        afterInput.value = "";
+        beforeInput.value = "";
+        pageSizeSelect.value = "20";
+        cleanupMinutesInput.value = "10";
+        autoRefreshSecondsInput.value = "3";
+        saveValue(STORAGE_CLEANUP_MINUTES_KEY, "10");
+        saveValue(STORAGE_AUTO_REFRESH_SECONDS_KEY, "3");
+        pageInput.value = "1";
+        syncAutoRefresh();
+        syncAutoCleanup();
+      }
+
+      async function copyCellValue(value) {
+        if (!value) return;
+        await navigator.clipboard.writeText(value);
+        setActionStatus("已复制完整内容。", "success");
+      }
+
+      saveTokenBtn.addEventListener("click", function () {
+        const token = getToken();
+        if (!token) return setAuthStatus("请输入 API_TOKEN 后再保存。", "error");
+        saveToken(token);
+        setAuthStatus("API_TOKEN 已保存到本地浏览器。", "success");
+      });
+      verifyTokenBtn.addEventListener("click", function () { verifyToken(); });
+      clearTokenBtn.addEventListener("click", function () {
+        tokenInput.value = "";
+        clearToken();
+        setAuthStatus("本地 API_TOKEN 已清空。", "success");
+      });
+      searchBtn.addEventListener("click", function () {
+        pageInput.value = "1";
+        loadMails(1);
+      });
+      cleanupBtn.addEventListener("click", function () { cleanupHistoryMails(); });
+      cleanupMinutesInput.addEventListener("input", saveCleanupMinutesInput);
+      cleanupMinutesInput.addEventListener("change", function () {
+        cleanupMinutesInput.value = String(getCleanupMinutes());
+        saveCleanupMinutesInput();
+        syncAutoCleanup();
+      });
+      toggleAutoCleanupBtn.addEventListener("click", function () {
+        state.isAutoCleanupOn = !state.isAutoCleanupOn;
+        syncAutoCleanup();
+        setActionStatus(state.isAutoCleanupOn ? "自动清理已开启。" : "自动清理已停止。", "info");
+      });
+      toggleAutoRefreshBtn.addEventListener("click", function () {
+        state.isAutoRefreshOn = !state.isAutoRefreshOn;
+        syncAutoRefresh();
+        setActionStatus(state.isAutoRefreshOn ? "自动查询已开启。" : "自动查询已停止。", "info");
+      });
+      autoRefreshSecondsInput.addEventListener("change", function () {
+        const seconds = getAutoRefreshSeconds();
+        autoRefreshSecondsInput.value = String(seconds);
+        saveValue(STORAGE_AUTO_REFRESH_SECONDS_KEY, autoRefreshSecondsInput.value);
+        syncAutoRefresh();
+        setActionStatus("自动查询间隔已更新为 " + seconds + " 秒。", "info");
+      });
+      resetFiltersBtn.addEventListener("click", function () {
+        resetFilters();
+        setActionStatus("筛选条件已重置。", "info");
+      });
+      prevPageBtn.addEventListener("click", function () {
+        if (state.page > 1) loadMails(state.page - 1);
+      });
+      nextPageBtn.addEventListener("click", function () {
+        if (state.totalPages > 0 && state.page < state.totalPages) loadMails(state.page + 1);
+      });
+      jumpPageBtn.addEventListener("click", function () {
+        loadMails(parseInt(pageInput.value || "1", 10) || 1);
+      });
+      mailTableBody.addEventListener("click", function (event) {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const button = target.closest(".detail-btn");
+        if (button instanceof HTMLElement) {
+          const id = button.getAttribute("data-id");
+          if (id) loadMailDetail(id);
+          return;
+        }
+        const cell = target.closest(".copy-cell");
+        if (!(cell instanceof HTMLElement)) return;
+        const value = cell.getAttribute("data-copy") || "";
+        copyCellValue(value).catch(function () {
+          setActionStatus("复制失败，请手动选择内容。", "error");
+        });
+      });
+      closeDetailBtn.addEventListener("click", closeDetailModal);
+      closeDetailBtn2.addEventListener("click", closeDetailModal);
+      detailModal.addEventListener("click", function (event) {
+        if (event.target === detailModal) closeDetailModal();
+      });
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && !detailModal.hidden) closeDetailModal();
+      });
+      document.addEventListener("visibilitychange", function () {
+        if (document.hidden) {
+          stopAutoRefresh();
+          return stopAutoCleanup();
+        }
+        if (state.isAutoRefreshOn) {
+          syncAutoRefresh();
+          loadMails(state.page, {
+            isAutoRefresh: true,
+            loadingText: "收件中"
+          });
+        }
+        if (state.isAutoCleanupOn) syncAutoCleanup();
+      });
+      autoRefreshSecondsInput.value = getSavedValue(STORAGE_AUTO_REFRESH_SECONDS_KEY, "3");
+      cleanupMinutesInput.value = getSavedValue(STORAGE_CLEANUP_MINUTES_KEY, "10");
+      autoRefreshSecondsInput.value = String(getAutoRefreshSeconds());
+      cleanupMinutesInput.value = String(getCleanupMinutes());
+      syncAutoRefresh();
+      syncAutoCleanup();
+      const savedToken = getSavedToken();
+      if (savedToken) {
+        tokenInput.value = savedToken;
+        setAuthStatus("已从本地读取 API_TOKEN，可以直接查询。", "success");
+      }
+    })();
+`;
+
+const CONSOLE_PAGE_HTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email Workers Console</title>
+  <style>${SHARED_PAGE_STYLE}</style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>Email Workers Mail Query</h1>
-      <div class="muted">
-        所有 API 都必须携带 Authorization: Bearer API_TOKEN。
-        你可以在本页面输入并保存在浏览器本地，然后查询全部邮件、按收件邮箱筛选、按时间筛选、分页查看，并清理一天前的历史邮件。
-      </div>
-    </div>
+  <div class="page-shell">
+    <div class="wrap">
+      <section class="hero panel">
+        <div class="hero-copy">
+          <span class="eyebrow">EMAIL WORKERS CONSOLE</span>
+          <h1>邮件收件箱控制台</h1>
+          <div class="hero-actions">
+            <a class="nav-link primary" href="/docs">API 文档</a>
+          </div>
+        </div>
+      </section>
 
-    <div class="grid">
-      <div>
-        <div class="card">
-          <h2>API_TOKEN</h2>
+      <div class="layout-grid">
+        <section class="panel section-panel">
+          <div class="section-head">
+            <div>
+              <h2>身份验证</h2>
+              <div class="section-note">先完成本地 Token 配置，再使用查询与清理操作。</div>
+            </div>
+            <div class="section-tag">Local Storage</div>
+          </div>
           <div class="row">
             <div class="field wide">
               <label for="tokenInput">API_TOKEN</label>
@@ -638,10 +1655,22 @@ function renderHomePage() {
             <button id="verifyTokenBtn" class="secondary" type="button">验证 Token</button>
             <button id="clearTokenBtn" class="secondary" type="button">清空 Token</button>
           </div>
-        </div>
+          <div class="status-shell">
+            <div id="authStatus" class="status muted" data-kind="info">请先输入并保存 API_TOKEN，再进行查询。</div>
+          </div>
+        </section>
 
-        <div class="card">
-          <h2>筛选与操作</h2>
+        <section class="panel section-panel">
+          <div class="section-head">
+            <div>
+              <h2>筛选与操作</h2>
+              <div class="section-note">支持按收件邮箱、时间区间与分页参数查询。</div>
+            </div>
+            <div class="meta-pills">
+              <span class="pill">Filterable</span>
+              <span class="pill">Paginated</span>
+            </div>
+          </div>
           <div class="row">
             <div class="field wide">
               <label for="rcptToInput">收件邮箱</label>
@@ -664,19 +1693,36 @@ function renderHomePage() {
                 <option value="100">100</option>
               </select>
             </div>
+            <div class="field">
+              <label for="cleanupMinutesInput">清理阈值(分钟)</label>
+              <div class="section-note">页面打开时，开启自动清理后会按这里填写的分钟数作为执行间隔，并清理对应分钟数之前的历史邮件。</div>
+              <input id="cleanupMinutesInput" type="number" min="1" value="10" />
+            </div>
+            <div class="field">
+              <label for="autoRefreshSecondsInput">自动查询(秒)</label>
+              <input id="autoRefreshSecondsInput" type="number" min="1" value="3" />
+            </div>
           </div>
-
           <div class="toolbar">
             <button id="searchBtn" class="primary" type="button">查询邮件</button>
-            <button id="cleanupBtn" class="danger" type="button">清理一天前历史邮件</button>
+            <button id="toggleAutoRefreshBtn" class="secondary" type="button">停止自动查询</button>
+            <button id="toggleAutoCleanupBtn" class="secondary" type="button">开启自动清理</button>
+            <button id="cleanupBtn" class="danger" type="button">按分钟清理历史邮件</button>
             <button id="resetFiltersBtn" class="secondary" type="button">重置筛选</button>
           </div>
-
-          <div style="height:12px;"></div>
-
+          <div class="status-shell">
+            <div id="actionStatus" class="status muted" data-kind="info">查询、重置、清理与复制提示会显示在这里。</div>
+          </div>
+          <div class="status-shell">
+            <div id="autoRefreshStatus" class="status muted" data-kind="info">收件中，3 秒后自动查询</div>
+          </div>
+          <div class="status-shell">
+            <div id="autoCleanupStatus" class="status muted" data-kind="info">自动清理已停止。</div>
+          </div>
+          <div style="height: 16px;"></div>
           <div class="pagination">
             <button id="prevPageBtn" class="secondary" type="button">上一页</button>
-            <div class="field" style="min-width:110px;max-width:110px;">
+            <div class="pagination-field">
               <label for="pageInput">页码</label>
               <input id="pageInput" type="number" min="1" value="1" />
             </div>
@@ -684,25 +1730,26 @@ function renderHomePage() {
             <button id="nextPageBtn" class="secondary" type="button">下一页</button>
             <span id="paginationInfo" class="pill">等待查询</span>
           </div>
+        </section>
 
-          <div style="height:12px;"></div>
-          <div id="status" class="status muted">请先输入并保存 API_TOKEN，再进行查询。</div>
-        </div>
-
-        <div class="card">
-          <h2>邮件列表</h2>
-          <div class="small muted">支持查看全部邮件，并按收件邮箱与时间范围筛选。</div>
-          <div style="height:12px;"></div>
+        <section class="panel section-panel">
+          <div class="section-head">
+            <div>
+              <h2>邮件列表</h2>
+              <div class="section-note">点击“查看详情”后使用弹窗展示整理后的邮件内容。</div>
+            </div>
+            <div class="section-tag">Inbox View</div>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>收到时间</th>
-                  <th>收件邮箱</th>
-                  <th>发件邮箱</th>
-                  <th>主题</th>
-                  <th>Message-ID</th>
-                  <th>操作</th>
+                  <th class="col-time">收到时间</th>
+                  <th class="col-to">收件邮箱</th>
+                  <th class="col-from">发件邮箱</th>
+                  <th class="col-subject">主题</th>
+                  <th class="col-message-id">Message-ID</th>
+                  <th class="col-actions">操作</th>
                 </tr>
               </thead>
               <tbody id="mailTableBody">
@@ -710,367 +1757,155 @@ function renderHomePage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       </div>
+    </div>
+  </div>
 
-      <div>
-        <div class="card">
-          <h2>邮件详情</h2>
-          <div class="small muted">点击列表中的“查看详情”后展示。</div>
-          <div style="height:12px;"></div>
-          <pre id="detailBox">暂无详情</pre>
+  <div id="detailModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-top">
+        <div>
+          <h2 id="detailTitle">邮件详情</h2>
+          <div class="section-note">优先展示可读正文，头信息和原始内容放在下方。</div>
         </div>
-
-        <div class="card">
-          <h2>接口示例</h2>
-          <pre>GET  /api/auth/verify
-GET  /api/mails?rcptTo=&after=&before=&page=1&pageSize=20
-GET  /api/mails/{id}
-POST /api/admin/cleanup-history
-
-兼容接口：
-GET /api/mail/{email}?after=&before=&page=1&pageSize=20
-GET /api/mail/{email}/{id}</pre>
+        <button id="closeDetailBtn" class="secondary" type="button">关闭</button>
+      </div>
+      <div class="detail-grid">
+        <div id="detailMeta" class="meta-grid"></div>
+        <div class="detail-card">
+          <strong>正文</strong>
+          <pre id="detailBody" class="body-box">暂无详情</pre>
+        </div>
+        <div class="detail-card">
+          <strong>邮件头</strong>
+          <div id="detailHeaders"></div>
+        </div>
+        <div class="detail-card">
+          <strong>原始内容</strong>
+          <pre id="detailRaw" class="raw-box"></pre>
+        </div>
+        <div class="toolbar">
+          <button id="closeDetailBtn2" class="secondary" type="button">关闭弹窗</button>
         </div>
       </div>
     </div>
   </div>
 
-  <script>
-    (function () {
-      const STORAGE_TOKEN_KEY = "mail_worker_api_token";
-
-      const tokenInput = document.getElementById("tokenInput");
-      const saveTokenBtn = document.getElementById("saveTokenBtn");
-      const verifyTokenBtn = document.getElementById("verifyTokenBtn");
-      const clearTokenBtn = document.getElementById("clearTokenBtn");
-
-      const rcptToInput = document.getElementById("rcptToInput");
-      const afterInput = document.getElementById("afterInput");
-      const beforeInput = document.getElementById("beforeInput");
-      const pageSizeSelect = document.getElementById("pageSizeSelect");
-      const pageInput = document.getElementById("pageInput");
-
-      const searchBtn = document.getElementById("searchBtn");
-      const cleanupBtn = document.getElementById("cleanupBtn");
-      const resetFiltersBtn = document.getElementById("resetFiltersBtn");
-
-      const prevPageBtn = document.getElementById("prevPageBtn");
-      const jumpPageBtn = document.getElementById("jumpPageBtn");
-      const nextPageBtn = document.getElementById("nextPageBtn");
-
-      const paginationInfo = document.getElementById("paginationInfo");
-      const status = document.getElementById("status");
-      const mailTableBody = document.getElementById("mailTableBody");
-      const detailBox = document.getElementById("detailBox");
-
-      const state = {
-        page: 1,
-        pageSize: 20,
-        total: 0,
-        totalPages: 0,
-        lastItems: []
-      };
-
-      function setStatus(message) {
-        status.textContent = message;
-      }
-
-      function getSavedToken() {
-        try {
-          return localStorage.getItem(STORAGE_TOKEN_KEY) || "";
-        } catch {
-          return "";
-        }
-      }
-
-      function saveToken(token) {
-        localStorage.setItem(STORAGE_TOKEN_KEY, token);
-      }
-
-      function clearToken() {
-        localStorage.removeItem(STORAGE_TOKEN_KEY);
-      }
-
-      function getToken() {
-        return tokenInput.value.trim();
-      }
-
-      function requireTokenOnClient() {
-        const token = getToken();
-        if (!token) {
-          setStatus("请先输入并保存 API_TOKEN。");
-          return "";
-        }
-        return token;
-      }
-
-      function buildAuthHeaders(extraHeaders) {
-        const token = requireTokenOnClient();
-        if (!token) return null;
-        const headers = new Headers(extraHeaders || {});
-        headers.set("Authorization", "Bearer " + token);
-        return headers;
-      }
-
-      async function fetchJson(path, init) {
-        const headers = buildAuthHeaders(init && init.headers ? init.headers : {});
-        if (!headers) {
-          throw new Error("缺少 API_TOKEN");
-        }
-
-        const response = await fetch(path, {
-          ...init,
-          headers
-        });
-
-        const text = await response.text();
-        let data = null;
-        try {
-          data = text ? JSON.parse(text) : null;
-        } catch {
-          data = { rawText: text };
-        }
-
-        if (!response.ok) {
-          const message = data && data.error ? data.error : ("请求失败，状态码 " + response.status);
-          throw new Error(message);
-        }
-
-        return data;
-      }
-
-      function escapeHtml(value) {
-        return String(value)
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll('"', "&quot;")
-          .replaceAll("'", "&#39;");
-      }
-
-      function formatDateTimeDisplay(value) {
-        if (!value) return "";
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return value;
-        return date.toLocaleString();
-      }
-
-      function toIsoFromLocalInput(value) {
-        if (!value) return "";
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return "";
-        return date.toISOString();
-      }
-
-      function renderTable(items) {
-        if (!Array.isArray(items) || items.length === 0) {
-          mailTableBody.innerHTML = '<tr><td colspan="6" class="empty">没有符合条件的邮件</td></tr>';
-          return;
-        }
-
-        const rows = items.map(function (item) {
-          return [
-            "<tr>",
-            "<td>", escapeHtml(formatDateTimeDisplay(item.receivedAt)), "</td>",
-            "<td>", escapeHtml(item.to || ""), "</td>",
-            "<td>", escapeHtml(item.from || ""), "</td>",
-            '<td class="subject">', escapeHtml(item.subject || ""), "</td>",
-            "<td>", escapeHtml(item.messageId || ""), "</td>",
-            "<td><button class=\\"secondary detail-btn\\" type=\\"button\\" data-id=\\"",
-            escapeHtml(item.id || ""),
-            "\\">查看详情</button></td>",
-            "</tr>"
-          ].join("");
-        }).join("");
-
-        mailTableBody.innerHTML = rows;
-      }
-
-      function updatePaginationInfo() {
-        paginationInfo.textContent =
-          "第 " + state.page + " / " + (state.totalPages || 1) + " 页，共 " + state.total + " 封";
-        pageInput.value = String(state.page);
-        prevPageBtn.disabled = state.page <= 1;
-        nextPageBtn.disabled = state.totalPages === 0 || state.page >= state.totalPages;
-      }
-
-      function getCurrentQueryParams(pageOverride) {
-        const params = new URLSearchParams();
-
-        const rcptTo = rcptToInput.value.trim();
-        const after = toIsoFromLocalInput(afterInput.value);
-        const before = toIsoFromLocalInput(beforeInput.value);
-        const page = pageOverride || parseInt(pageInput.value || "1", 10) || 1;
-        const pageSize = parseInt(pageSizeSelect.value || "20", 10) || 20;
-
-        if (rcptTo) params.set("rcptTo", rcptTo);
-        if (after) params.set("after", after);
-        if (before) params.set("before", before);
-
-        params.set("page", String(page));
-        params.set("pageSize", String(pageSize));
-
-        return { params, page, pageSize };
-      }
-
-      async function loadMails(pageOverride) {
-        try {
-          const { params, page, pageSize } = getCurrentQueryParams(pageOverride);
-          state.page = page;
-          state.pageSize = pageSize;
-
-          setStatus("查询中...");
-          const data = await fetchJson("/api/mails?" + params.toString(), { method: "GET" });
-
-          state.total = Number(data.total || 0);
-          state.totalPages = Number(data.totalPages || 0);
-          state.page = Number(data.page || page);
-          state.pageSize = Number(data.pageSize || pageSize);
-          state.lastItems = Array.isArray(data.items) ? data.items : [];
-
-          renderTable(state.lastItems);
-          updatePaginationInfo();
-          setStatus("查询成功。");
-        } catch (error) {
-          renderTable([]);
-          state.total = 0;
-          state.totalPages = 0;
-          updatePaginationInfo();
-          setStatus("查询失败: " + (error && error.message ? error.message : String(error)));
-        }
-      }
-
-      async function loadMailDetail(id) {
-        try {
-          detailBox.textContent = "详情加载中...";
-          const data = await fetchJson("/api/mails/" + encodeURIComponent(id), { method: "GET" });
-          detailBox.textContent = JSON.stringify(data, null, 2);
-        } catch (error) {
-          detailBox.textContent = "详情加载失败: " + (error && error.message ? error.message : String(error));
-        }
-      }
-
-      async function verifyToken() {
-        try {
-          setStatus("正在验证 Token...");
-          await fetchJson("/api/auth/verify", { method: "GET" });
-          setStatus("Token 验证成功。");
-        } catch (error) {
-          setStatus("Token 验证失败: " + (error && error.message ? error.message : String(error)));
-        }
-      }
-
-      async function cleanupHistoryMails() {
-        const token = requireTokenOnClient();
-        if (!token) return;
-
-        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const confirmed = confirm(
-          "确定清理一天前的所有历史邮件吗？\\n清理阈值: " + cutoff.toLocaleString()
-        );
-        if (!confirmed) return;
-
-        try {
-          setStatus("正在清理一天前历史邮件...");
-          const data = await fetchJson("/api/admin/cleanup-history", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({})
-          });
-
-          setStatus(
-            "清理完成。删除数量: " +
-            String(data.deletedCount || 0) +
-            "，阈值: " +
-            String(data.before || "")
-          );
-
-          await loadMails(1);
-        } catch (error) {
-          setStatus("清理失败: " + (error && error.message ? error.message : String(error)));
-        }
-      }
-
-      function resetFilters() {
-        rcptToInput.value = "";
-        afterInput.value = "";
-        beforeInput.value = "";
-        pageSizeSelect.value = "20";
-        pageInput.value = "1";
-      }
-
-      saveTokenBtn.addEventListener("click", function () {
-        const token = getToken();
-        if (!token) {
-          setStatus("请输入 API_TOKEN 后再保存。");
-          return;
-        }
-        saveToken(token);
-        setStatus("API_TOKEN 已保存到本地浏览器。");
-      });
-
-      verifyTokenBtn.addEventListener("click", function () {
-        verifyToken();
-      });
-
-      clearTokenBtn.addEventListener("click", function () {
-        tokenInput.value = "";
-        clearToken();
-        setStatus("本地 API_TOKEN 已清空。");
-      });
-
-      searchBtn.addEventListener("click", function () {
-        pageInput.value = "1";
-        loadMails(1);
-      });
-
-      cleanupBtn.addEventListener("click", function () {
-        cleanupHistoryMails();
-      });
-
-      resetFiltersBtn.addEventListener("click", function () {
-        resetFilters();
-        setStatus("筛选条件已重置。");
-      });
-
-      prevPageBtn.addEventListener("click", function () {
-        if (state.page > 1) {
-          loadMails(state.page - 1);
-        }
-      });
-
-      nextPageBtn.addEventListener("click", function () {
-        if (state.totalPages > 0 && state.page < state.totalPages) {
-          loadMails(state.page + 1);
-        }
-      });
-
-      jumpPageBtn.addEventListener("click", function () {
-        const page = parseInt(pageInput.value || "1", 10) || 1;
-        loadMails(page);
-      });
-
-      mailTableBody.addEventListener("click", function (event) {
-        const target = event.target;
-        if (!(target instanceof HTMLElement)) return;
-        const id = target.getAttribute("data-id");
-        if (target.classList.contains("detail-btn") && id) {
-          loadMailDetail(id);
-        }
-      });
-
-      const savedToken = getSavedToken();
-      if (savedToken) {
-        tokenInput.value = savedToken;
-        setStatus("已从本地读取 API_TOKEN，可以直接查询。");
-      }
-    })();
-  </script>
+  <script>${CONSOLE_PAGE_SCRIPT}</script>
 </body>
 </html>`;
+
+const DOCS_PAGE_HTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email Workers Docs</title>
+  <style>${SHARED_PAGE_STYLE}</style>
+</head>
+<body>
+  <div class="page-shell">
+    <div class="wrap">
+      <section class="hero panel">
+        <div class="hero-copy">
+          <span class="eyebrow">API DOCUMENTATION</span>
+          <h1>接口文档</h1>
+          <p class="hero-text">文档页独立放在 <code>/docs</code>，这里只保留接口说明和浏览器/前端可直接复用的 fetch 示例。</p>
+          <div class="top-links">
+            <a class="nav-link primary" href="/">返回首页</a>
+          </div>
+        </div>
+        <div class="panel-note">
+          <strong>文档说明</strong>
+          <div class="small">所有受保护接口都需要带上 <code>Authorization: Bearer API_TOKEN</code>。</div>
+        </div>
+      </section>
+
+      <div class="doc-grid">
+        <section class="doc-card">
+          <h3>认证验证</h3>
+          <div class="small">GET <code>/api/auth/verify</code></div>
+          <p>用于验证当前 Token 是否正确。</p>
+          <pre class="code-box">fetch("/api/auth/verify", {
+  method: "GET",
+  headers: {
+    Authorization: "Bearer " + token
+  }
+});</pre>
+        </section>
+
+        <section class="doc-card">
+          <h3>邮件列表</h3>
+          <div class="small">GET <code>/api/mails</code></div>
+          <ul class="doc-list">
+            <li><code>rcptTo</code>: 可选，按收件邮箱过滤。</li>
+            <li><code>after</code>: 可选，开始时间，ISO 字符串。</li>
+            <li><code>before</code>: 可选，结束时间，ISO 字符串。</li>
+            <li><code>page</code>: 页码，从 1 开始。</li>
+            <li><code>pageSize</code>: 每页条数，最大 100。</li>
+          </ul>
+          <pre class="code-box">const params = new URLSearchParams({
+  rcptTo: "demo@example.com",
+  page: "1",
+  pageSize: "20"
+});
+
+fetch("/api/mails?" + params.toString(), {
+  method: "GET",
+  headers: {
+    Authorization: "Bearer " + token
+  }
+});</pre>
+        </section>
+
+        <section class="doc-card">
+          <h3>邮件详情</h3>
+          <div class="small">GET <code>/api/mails/{id}</code></div>
+          <p>返回单封邮件的基础信息、头信息和原始内容。首页里的弹窗会基于这份数据整理出更易读的展示。</p>
+          <pre class="code-box">fetch("/api/mails/MAIL_ID", {
+  method: "GET",
+  headers: {
+    Authorization: "Bearer " + token
+  }
+});</pre>
+        </section>
+
+        <section class="doc-card">
+          <h3>历史清理</h3>
+          <div class="small">POST <code>/api/admin/cleanup-history</code></div>
+          <p>默认清理一天前的历史邮件，也可传入 JSON body 指定 <code>before</code> 时间。</p>
+          <pre class="code-box">fetch("/api/admin/cleanup-history", {
+  method: "POST",
+  headers: {
+    Authorization: "Bearer " + token,
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    before: "2025-01-01T00:00:00.000Z"
+  })
+});</pre>
+        </section>
+
+        <section class="doc-card">
+          <h3>兼容接口</h3>
+          <ul class="doc-list">
+            <li><code>GET /api/mail/{email}?after=&before=&page=1&pageSize=20</code></li>
+            <li><code>GET /api/mail/{email}/{id}</code></li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+function renderConsolePage() {
+  return CONSOLE_PAGE_HTML;
+}
+
+function renderDocsPage() {
+  return DOCS_PAGE_HTML;
 }
 
 // =============================================================================
@@ -1221,7 +2056,23 @@ async function deleteMailsBefore(db, beforeIso) {
  * @returns {Response}
  */
 function handleHomePage() {
-  return new Response(renderHomePage(), HTML_RESPONSE_HEADERS);
+  return new Response(renderConsolePage(), HTML_RESPONSE_HEADERS);
+}
+
+/**
+ * 处理文档页
+ * @returns {Response}
+ */
+function handleDocsPage() {
+  return new Response(renderDocsPage(), HTML_RESPONSE_HEADERS);
+}
+
+/**
+ * 处理首页脚本
+ * @returns {Response}
+ */
+function handleConsoleScript() {
+  return new Response(CONSOLE_PAGE_SCRIPT, SCRIPT_RESPONSE_HEADERS);
 }
 
 /**
@@ -1419,8 +2270,6 @@ async function handleCleanupHistoryMails(request, env) {
   if (authError) return authError;
 
   try {
-    await ensureSchema(env.DB);
-
     /** @type {{ before?: string } | null} */
     let payload = null;
     try {
@@ -1436,6 +2285,7 @@ async function handleCleanupHistoryMails(request, env) {
       beforeIso = new Date(Date.now() - CLEANUP_OLDER_THAN_MS).toISOString();
     }
 
+    await ensureSchema(env.DB);
     const deletedCount = await deleteMailsBefore(env.DB, beforeIso);
 
     return jsonResponse({
@@ -1527,6 +2377,14 @@ export default {
       return handleHomePage();
     }
 
+    if (path === "/docs" && method === "GET") {
+      return handleDocsPage();
+    }
+
+    if (path === "/console.js" && method === "GET") {
+      return handleConsoleScript();
+    }
+
     if (path === `${API_PREFIX}/auth/verify` && method === "GET") {
       return handleVerifyApiToken(request, env);
     }
@@ -1573,4 +2431,5 @@ export default {
   async email(message, env, ctx) {
     await handleIncomingEmail(message, env, ctx);
   },
+
 };
