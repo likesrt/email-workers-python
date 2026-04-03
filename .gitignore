@@ -31,3 +31,5 @@ attachments/
 .idea/
 .DS_Store
 Thumbs.db
+.claude/
+CLAUDE.local.md
