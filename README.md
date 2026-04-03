@@ -7,9 +7,25 @@
 
 ## 项目结构
 
-- [_worker.js](_worker.js)：Cloudflare Email Worker，只转发信封基础信息和 raw 邮件内容
-- [app.py](app.py)：FastAPI 服务，负责解析邮件、入库、查询、详情、清理和控制台页面
-- [requirements.txt](requirements.txt)：Python 依赖
+```text
+.
+├─ _worker.js                  # Cloudflare Email Worker
+├─ main.py                     # 本地启动入口
+├─ app/
+│  ├─ __init__.py              # FastAPI 应用入口
+│  ├─ config.py                # 环境变量与常量
+│  ├─ database.py              # 数据库连接与建表
+│  ├─ mail_parser.py           # 邮件解析与附件提取
+│  ├─ models.py                # Pydantic 模型
+│  ├─ sql.py                   # SQL 常量
+│  ├─ utils.py                 # 通用工具
+│  ├─ routes/                  # 路由层
+│  ├─ services/                # 服务层
+│  └─ templates/               # HTML / JS / CSS 模板文件
+├─ Dockerfile                  # 应用镜像构建文件
+├─ docker-compose.yml          # 本地/单机部署编排文件
+└─ requirements.txt            # Python 依赖
+```
 
 ## 当前架构
 
@@ -20,7 +36,7 @@ Cloudflare Email Routing
 Cloudflare Worker (_worker.js)
         │  POST /internal/emails
         ▼
-FastAPI (app.py)
+FastAPI (app package)
         │
         ▼
 PostgreSQL
@@ -101,7 +117,7 @@ pip install -r requirements.txt
 ## 启动 FastAPI
 
 ```bash
-python app.py
+python main.py
 ```
 
 或者：
@@ -109,6 +125,8 @@ python app.py
 ```bash
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
+
+如果使用 Docker，请直接看下方“Docker 部署”章节。
 
 启动后默认地址：
 
@@ -245,6 +263,89 @@ Content-Type: application/json
    - `API_TOKEN`
 3. 确保 FastAPI 的 `/internal/emails` 能通过公网 HTTPS 域名访问
 4. 如果 Worker 返回 `403 error code: 1003`，优先检查 `BACKEND_BASE_URL` 是否写成了 IP、本地地址、Docker 服务名或错误的路径
+
+## Docker 部署
+
+### 1. 准备环境变量
+
+`docker-compose.yml` 默认会读取宿主机环境变量中的 `API_TOKEN`。
+
+示例：
+
+```bash
+export API_TOKEN=your-secret-token
+```
+
+如果你在 Windows PowerShell 中执行，可使用：
+
+```powershell
+$env:API_TOKEN="your-secret-token"
+```
+
+### 2. 启动服务
+
+```bash
+docker compose up -d --build
+```
+
+启动后：
+
+- FastAPI 控制台：`http://127.0.0.1:8000/`
+- 文档页：`http://127.0.0.1:8000/docs`
+- Swagger：`http://127.0.0.1:8000/openapi`
+- PostgreSQL：`127.0.0.1:5432`
+
+### 3. compose 内置服务说明
+
+- `app`：FastAPI 服务，容器内监听 `8000`
+- `db`：PostgreSQL 16，默认库名 `maildb`
+- `postgres_data`：持久化数据库数据
+- `mail_attachments`：持久化邮件附件文件
+
+### 4. 默认数据库配置
+
+`docker-compose.yml` 中应用默认使用：
+
+```text
+DATABASE_URL=postgresql://mail:mail@db:5432/maildb
+```
+
+对应 PostgreSQL 默认账号：
+
+- `POSTGRES_DB=maildb`
+- `POSTGRES_USER=mail`
+- `POSTGRES_PASSWORD=mail`
+
+如需修改，可直接调整 [docker-compose.yml](docker-compose.yml)。
+
+### 5. 停止服务
+
+```bash
+docker compose down
+```
+
+如果你还想连同数据卷一起删除：
+
+```bash
+docker compose down -v
+```
+
+### 6. Cloudflare Worker 对接 Docker 部署
+
+当 FastAPI 通过 Docker 部署后，Worker 的 `BACKEND_BASE_URL` 仍然必须填写**对外可访问的 HTTPS 域名根地址**。
+
+例如：
+
+```text
+https://mail.example.com
+```
+
+不要填写：
+
+- `http://localhost:8000`
+- `http://db:5432`
+- `http://email-workers-app:8000`
+- `https://your-domain/internal/emails`
 
 ## 调试建议
 

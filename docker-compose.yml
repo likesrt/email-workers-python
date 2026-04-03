@@ -1,0 +1,51 @@
+services:
+  # FastAPI 应用服务。
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: email-workers-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # 应用运行所需环境变量。
+      DATABASE_URL: postgresql://mail:mail@db:5432/maildb
+      API_TOKEN: ${API_TOKEN:-change-me}
+      PORT: 8000
+      ATTACHMENTS_DIR: /app/attachments
+    ports:
+      - "8000:8000"
+    volumes:
+      # 持久化附件目录。
+      - mail_attachments:/app/attachments
+    restart: unless-stopped
+
+  # PostgreSQL 数据库服务。
+  db:
+    image: postgres:16
+    container_name: email-workers-db
+    environment:
+      # 初始化数据库账号与库名。
+      POSTGRES_DB: maildb
+      POSTGRES_USER: mail
+      POSTGRES_PASSWORD: mail
+    ports:
+      - "5432:5432"
+    volumes:
+      # 持久化 PostgreSQL 数据。
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # 等待数据库进入可连接状态。
+      test: ["CMD-SHELL", "pg_isready -U mail -d maildb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  # PostgreSQL 数据卷。
+  postgres_data:
+  # 附件数据卷。
+  mail_attachments:

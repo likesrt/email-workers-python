@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email Workers Docs</title>
+  <style>__STYLE__</style>
+</head>
+<body>
+  <div class="page-shell">
+    <div class="wrap">
+      <section class="hero panel">
+        <div class="hero-copy">
+          <span class="eyebrow">API DOCUMENTATION</span>
+          <h1>接口文档</h1>
+          <p class="hero-text">控制台现在由 FastAPI 提供，邮件存储位于 PostgreSQL，邮件写入入口由 Cloudflare Worker 调用内部接口。</p>
+          <div class="top-links">
+            <a class="nav-link primary" href="/">返回首页</a>
+            <a class="nav-link secondary" href="/openapi">Swagger</a>
+          </div>
+        </div>
+        <div class="panel-note">
+          <strong>文档说明</strong>
+          <div class="small">所有接口都需要 <code>Authorization: Bearer API_TOKEN</code>。</div>
+        </div>
+      </section>
+
+      <div class="doc-grid">
+        <section class="doc-card">
+          <h3>认证验证</h3>
+          <div class="small">GET <code>/api/auth/verify</code></div>
+          <p>用于验证当前 Token 是否正确。</p>
+          <pre class="code-box">fetch("/api/auth/verify", {
+  method: "GET",
+  headers: {
+    Authorization: "Bearer " + token
+  }
+});</pre>
+        </section>
+
+        <section class="doc-card">
+          <h3>邮件列表</h3>
+          <div class="small">GET <code>/api/mails</code></div>
+          <ul class="doc-list">
+            <li><code>rcptTo</code>: 可选，按收件邮箱过滤。</li>
+            <li><code>after</code>: 可选，开始时间，ISO 字符串。</li>
+            <li><code>before</code>: 可选，结束时间，ISO 字符串。</li>
+            <li><code>page</code>: 页码，从 1 开始。</li>
+            <li><code>pageSize</code>: 每页条数，最大 100。</li>
+          </ul>
+          <pre class="code-box">const params = new URLSearchParams({
+  rcptTo: "demo@example.com",
+  page: "1",
+  pageSize: "20"
+});
+
+fetch("/api/mails?" + params.toString(), {
+  method: "GET",
+  headers: {
+    Authorization: "Bearer " + token
+  }
+});</pre>
+        </section>
+
+        <section class="doc-card">
+          <h3>邮件详情</h3>
+          <div class="small">GET <code>/api/mails/{id}</code></div>
+          <p>返回单封邮件的基础信息、头信息和原始内容。</p>
+          <pre class="code-box">fetch("/api/mails/MAIL_ID", {
+  method: "GET",
+  headers: {
+    Authorization: "Bearer " + token
+  }
+});</pre>
+        </section>
+
+        <section class="doc-card">
+          <h3>系统自动清理配置</h3>
+          <div class="small">GET / PUT <code>/api/admin/auto-cleanup</code></div>
+          <p>用于读取或更新后端自动清理开关与执行间隔。系统默认清理 10 分钟前的邮件。</p>
+          <pre class="code-box">fetch("/api/admin/auto-cleanup", {
+  method: "PUT",
+  headers: {
+    Authorization: "Bearer " + token,
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    enabled: true,
+    intervalMinutes: 10
+  })
+});</pre>
+        </section>
+
+        <section class="doc-card">
+          <h3>手动历史清理</h3>
+          <div class="small">POST <code>/api/admin/cleanup-history</code></div>
+          <p>仅在你手动触发时执行清理，也可传入 JSON body 指定 <code>before</code> 时间；不传时默认清理一天前的邮件。</p>
+          <pre class="code-box">fetch("/api/admin/cleanup-history", {
+  method: "POST",
+  headers: {
+    Authorization: "Bearer " + token,
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    before: "2025-01-01T00:00:00.000Z"
+  })
+});</pre>
+        </section>
+
+        <section class="doc-card">
+          <h3>内部写入接口</h3>
+          <div class="small">POST <code>/internal/emails</code></div>
+          <p>仅供 Cloudflare Worker 调用，负责把收到的邮件落到 PostgreSQL。</p>
+          <pre class="code-box">fetch("/internal/emails", {
+  method: "POST",
+  headers: {
+    Authorization: "Bearer " + token,
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify(payload)
+});</pre>
+        </section>
+
+        <section class="doc-card">
+          <h3>兼容接口</h3>
+          <ul class="doc-list">
+            <li><code>GET /api/mail/{email}?after=&before=&page=1&pageSize=20</code></li>
+            <li><code>GET /api/mail/{email}/{id}</code></li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
