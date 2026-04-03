@@ -67,6 +67,7 @@
 ```text
 .
 ├─ _worker.js                  # Cloudflare Email Worker
+├─ wrangler.toml               # Wrangler 部署配置
 ├─ main.py                     # 本地启动入口
 ├─ app/
 │  ├─ __init__.py              # FastAPI 应用入口
@@ -490,13 +491,18 @@ README 顶部已经提供官方 Deploy to Cloudflare 按钮，点击后会跳转
 
 #### 方式 B：Wrangler CLI
 
-Cloudflare 官方推荐可通过 Wrangler 部署 Worker：
+项目已提供 [wrangler.toml](wrangler.toml)，可直接通过 Wrangler 部署：
 
 ```bash
 npx wrangler deploy
 ```
 
-如果你后续要改造成标准 Wrangler 项目，可以继续补 `wrangler.toml` 或 `wrangler.jsonc`，再通过 CLI 反复发布。
+部署前需先配置环境变量（以 secret 方式写入，不要明文写在 `wrangler.toml` 中）：
+
+```bash
+npx wrangler secret put BACKEND_BASE_URL
+npx wrangler secret put API_TOKEN
+```
 
 ### 3. Worker 必填环境变量
 
