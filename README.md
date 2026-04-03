@@ -45,6 +45,18 @@
     - [4. 默认数据库配置](#4-默认数据库配置)
     - [5. 停止服务](#5-停止服务)
     - [6. Cloudflare Worker 对接 Docker 部署](#6-cloudflare-worker-对接-docker-部署)
+  - [Cloudflare Workers 部署详解](#cloudflare-workers-部署详解)
+    - [1. 使用 Deploy to Cloudflare 按钮](#1-使用-deploy-to-cloudflare-按钮)
+    - [2. 手动通过 Dashboard / Wrangler 部署](#2-手动通过-dashboard--wrangler-部署)
+    - [3. Worker 必填环境变量](#3-worker-必填环境变量)
+    - [4. 部署后自检](#4-部署后自检)
+  - [Cloudflare 邮件路由设置教程](#cloudflare-邮件路由设置教程)
+    - [1. 开启 Email Routing](#1-开启-email-routing)
+    - [2. 添加并验证目标邮箱](#2-添加并验证目标邮箱)
+    - [3. 创建接收到 Worker 的路由规则](#3-创建接收到-worker-的路由规则)
+    - [4. 绑定 Worker 到邮件路由](#4-绑定-worker-到邮件路由)
+    - [5. 发送测试邮件](#5-发送测试邮件)
+    - [6. 常见问题排查](#6-常见问题排查)
   - [GitHub Actions Docker 镜像构建](#github-actions-docker-镜像构建)
   - [调试建议](#调试建议)
 
@@ -445,6 +457,189 @@ https://mail.example.com
 - `http://email-workers-app:8000`
 - `https://your-domain/internal/emails`
 
+## Cloudflare Workers 部署详解
+
+### 1. 使用 Deploy to Cloudflare 按钮
+
+README 顶部已经提供官方 Deploy to Cloudflare 按钮，点击后会跳转到 Cloudflare 的一键部署页面。
+
+适合场景：
+
+- 想快速把当前仓库复制到自己的 Cloudflare / GitHub 流程中
+- 不想先本地安装 Wrangler
+- 需要先在 Cloudflare 控制台完成初始化部署
+
+按钮使用的是 Cloudflare 官方格式：
+
+```md
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/likesrt/email-workers-python)
+```
+
+### 2. 手动通过 Dashboard / Wrangler 部署
+
+如果你想手动部署 `_worker.js`，可以使用以下两种方式。
+
+#### 方式 A：Cloudflare Dashboard
+
+1. 登录 Cloudflare 控制台
+2. 打开 `Workers & Pages`
+3. 创建或导入 Worker
+4. 将 [_worker.js](_worker.js) 内容粘贴到 Worker 编辑器
+5. 在 Worker 设置中补充环境变量
+6. 保存并部署
+
+#### 方式 B：Wrangler CLI
+
+Cloudflare 官方推荐可通过 Wrangler 部署 Worker：
+
+```bash
+npx wrangler deploy
+```
+
+如果你后续要改造成标准 Wrangler 项目，可以继续补 `wrangler.toml` 或 `wrangler.jsonc`，再通过 CLI 反复发布。
+
+### 3. Worker 必填环境变量
+
+部署 Worker 时，至少需要配置：
+
+- `BACKEND_BASE_URL`
+- `API_TOKEN`
+
+建议值说明：
+
+- `BACKEND_BASE_URL`：FastAPI 的公网 HTTPS 域名根地址
+- `API_TOKEN`：必须与 FastAPI 后端完全一致
+
+正确示例：
+
+```text
+BACKEND_BASE_URL=https://mail.example.com
+API_TOKEN=your-secret-token
+```
+
+错误示例：
+
+```text
+BACKEND_BASE_URL=http://localhost:8000
+BACKEND_BASE_URL=http://email-workers-python:8000
+BACKEND_BASE_URL=https://mail.example.com/internal/emails
+```
+
+### 4. 部署后自检
+
+Worker 部署完成后，建议检查：
+
+1. Worker 是否已成功发布
+2. `BACKEND_BASE_URL` 是否是公网 HTTPS 根地址
+3. `API_TOKEN` 是否与 FastAPI 完全一致
+4. FastAPI 的 `/internal/emails` 是否可被公网访问
+5. 发送测试邮件后，FastAPI 是否成功入库
+
+## Cloudflare 邮件路由设置教程
+
+### 1. 开启 Email Routing
+
+官方前提是：你的域名已经托管在 Cloudflare，并启用了 Email Routing。
+
+基本步骤：
+
+1. 进入 Cloudflare 控制台
+2. 选择你的域名
+3. 打开 `Email` 或 `Email Routing`
+4. 按向导启用 Email Routing
+5. 根据 Cloudflare 提示完成所需 DNS 记录配置
+
+如果控制台提示需要添加或修改 DNS 记录，应先完成这些记录后再继续。
+
+### 2. 添加并验证目标邮箱
+
+Cloudflare 官方说明里，Email Routing 通常要求先添加并验证目标邮箱。
+
+步骤：
+
+1. 在 Email Routing 中添加目标邮箱
+2. Cloudflare 会发送验证邮件到该邮箱
+3. 打开验证邮件并完成确认
+4. 验证成功后，该邮箱即可作为转发目标或相关配置前提
+
+### 3. 创建接收到 Worker 的路由规则
+
+你的目标不是直接转发到普通邮箱，而是让邮件进入 Worker。
+
+推荐流程：
+
+1. 在 Email Routing 中添加新的路由规则
+2. 匹配收件地址，例如：
+   - `catch-all`
+   - `support@example.com`
+   - `*@example.com`
+3. 动作选择投递到 Worker
+4. 选择你部署好的 Worker
+
+这样邮件到达 Cloudflare 后，会直接触发 Worker 的 `email(message, env, ctx)` 处理逻辑。
+
+### 4. 绑定 Worker 到邮件路由
+
+Cloudflare Worker 需要具备 Email handler，也就是当前 `_worker.js` 这类接收邮件事件的逻辑。
+
+Cloudflare 官方 Email handler 入口形式类似：
+
+```javascript
+export default {
+  async email(message, env, ctx) {
+    // handle message
+  },
+}
+```
+
+你的 Worker 已经属于这一类用途：接收邮件事件、读取 raw 内容、再转发给 FastAPI。
+
+因此要确认两点：
+
+1. Email Routing 规则已经把邮件投递到这个 Worker
+2. Worker 已经正确配置 `BACKEND_BASE_URL` 和 `API_TOKEN`
+
+### 5. 发送测试邮件
+
+完成路由后，建议做一次完整测试：
+
+1. 从外部邮箱向你的域名地址发邮件
+2. 确认 Cloudflare Worker 是否被触发
+3. 确认 Worker 是否成功请求 FastAPI `/internal/emails`
+4. 在 FastAPI 控制台中检查邮件是否出现
+5. 如有附件，确认附件是否也被正确保存
+
+### 6. 常见问题排查
+
+#### 邮件没有触发 Worker
+
+优先检查：
+
+- 域名是否真的启用了 Email Routing
+- MX / 相关 DNS 记录是否已按 Cloudflare 要求生效
+- 路由规则是否命中目标收件地址
+- 路由动作是否真的绑定到了目标 Worker
+
+#### Worker 触发了，但后端未入库
+
+优先检查：
+
+- `BACKEND_BASE_URL` 是否填写正确
+- `API_TOKEN` 是否一致
+- FastAPI `/internal/emails` 是否公网可达
+- FastAPI 是否能连 PostgreSQL
+- FastAPI 日志中是否存在 401 / 500 / 解析异常
+
+#### 出现 `403 error code: 1003`
+
+这通常优先检查 `BACKEND_BASE_URL`：
+
+- 不要填 IP
+- 不要填 `localhost`
+- 不要填 Docker 内部服务名
+- 不要把 `/internal/emails` 路径写进去
+- 必须是公网 HTTPS 域名根地址
+
 ## GitHub Actions Docker 镜像构建
 
 项目已提供工作流文件：
@@ -460,7 +655,7 @@ https://mail.example.com
 行为说明：
 
 - PR / 手动触发：仅构建 Docker 镜像，快速验证是否可打包
-- `main` 分支推送：构建并推送镜像到 `ghcr.io/<owner>/<repo>`
+- `main` 分支推送：构建并推送镜像到 `ghcr.io/likesrt/email-workers-python`
 
 镜像标签：
 
