@@ -1,0 +1,34 @@
+# Git 与编辑器缓存目录。
+.git
+.github
+.vscode
+.idea
+
+# Python 缓存与虚拟环境。
+__pycache__
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.venv
+venv
+
+# Conda 与本地环境文件。
+.env
+.env.*
+conda-meta
+
+# 本地运行数据与构建产物。
+attachments
+*.log
+*.sqlite3
+*.db
+build
+dist
+
+# Docker 运行时无须携带的文件。
+Dockerfile*
+docker-compose*.yml
+README.md

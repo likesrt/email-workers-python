@@ -1,10 +1,13 @@
 services:
   # FastAPI 应用服务。
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: email-workers-app
+    # 直接使用已构建并推送到 GHCR 的镜像。
+    image: ghcr.io/likesrt/email-workers-python:latest
+    # 如需本地手动打包，可改回以下 build 配置。
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    container_name: email-workers-python
     depends_on:
       db:
         condition: service_healthy

@@ -1,9 +1,54 @@
 # email-workers
 
+> [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/likesrt/email-workers-python)
+
 一个两段式邮件收集项目：
 
 - Cloudflare Worker 负责接收邮件并转发原始内容
 - FastAPI 负责鉴权、解析 raw 邮件并写入 PostgreSQL
+  
+  
+## 快速跳转
+
+- [email-workers](#email-workers)
+  - [快速跳转](#快速跳转)
+  - [项目结构](#项目结构)
+  - [当前架构](#当前架构)
+  - [Worker 行为](#worker-行为)
+  - [FastAPI 行为](#fastapi-行为)
+  - [环境变量](#环境变量)
+    - [FastAPI](#fastapi)
+    - [Cloudflare Worker](#cloudflare-worker)
+  - [Python 依赖](#python-依赖)
+  - [本地 Conda 环境](#本地-conda-环境)
+    - [1. 创建环境](#1-创建环境)
+    - [2. 激活环境](#2-激活环境)
+    - [3. 本地启动](#3-本地启动)
+  - [启动 FastAPI](#启动-fastapi)
+  - [鉴权方式](#鉴权方式)
+  - [Worker 推送数据格式](#worker-推送数据格式)
+  - [主要接口](#主要接口)
+    - [1. 验证 Token](#1-验证-token)
+    - [2. 查询邮件列表](#2-查询邮件列表)
+    - [3. 查询邮件详情](#3-查询邮件详情)
+    - [4. 兼容旧路径查询列表](#4-兼容旧路径查询列表)
+    - [5. 兼容旧路径查询详情](#5-兼容旧路径查询详情)
+    - [6. 清理历史邮件](#6-清理历史邮件)
+  - [数据库存储字段](#数据库存储字段)
+  - [部署说明](#部署说明)
+    - [FastAPI](#fastapi-1)
+    - [Cloudflare Worker](#cloudflare-worker-1)
+  - [Docker 部署](#docker-部署)
+    - [1. 准备环境变量](#1-准备环境变量)
+    - [2. 启动服务](#2-启动服务)
+    - [3. compose 内置服务说明](#3-compose-内置服务说明)
+    - [4. 默认数据库配置](#4-默认数据库配置)
+    - [5. 停止服务](#5-停止服务)
+    - [6. Cloudflare Worker 对接 Docker 部署](#6-cloudflare-worker-对接-docker-部署)
+  - [GitHub Actions Docker 镜像构建](#github-actions-docker-镜像构建)
+  - [调试建议](#调试建议)
+
+
 
 ## 项目结构
 
@@ -112,6 +157,34 @@ psycopg[binary]>=3.2.10
 
 ```bash
 pip install -r requirements.txt
+```
+
+## 本地 Conda 环境
+
+项目已提供 [environment.yml](environment.yml)，可用于本地快速创建运行环境。
+
+### 1. 创建环境
+
+```bash
+conda env create -f environment.yml
+```
+
+### 2. 激活环境
+
+```bash
+conda activate email-workers
+```
+
+### 3. 本地启动
+
+```bash
+python main.py
+```
+
+如果你修改了依赖，可重新更新环境：
+
+```bash
+conda env update -f environment.yml --prune
 ```
 
 ## 启动 FastAPI
@@ -268,21 +341,46 @@ Content-Type: application/json
 
 ### 1. 准备环境变量
 
-`docker-compose.yml` 默认会读取宿主机环境变量中的 `API_TOKEN`。
+项目提供了环境变量示例文件：[.env.example](.env.example)。
 
-示例：
+可先复制为本地 `.env`：
 
 ```bash
-export API_TOKEN=your-secret-token
+cp .env.example .env
 ```
 
 如果你在 Windows PowerShell 中执行，可使用：
 
 ```powershell
-$env:API_TOKEN="your-secret-token"
+Copy-Item .env.example .env
 ```
 
+然后按需修改其中的关键配置：
+
+- `DATABASE_URL`：本地直连 PostgreSQL 时使用
+- `API_TOKEN`：FastAPI 与 Worker 共用鉴权 Token
+- `PORT`：本地运行端口
+- `ATTACHMENTS_DIR`：附件落盘目录
+- `BACKEND_BASE_URL`：Cloudflare Worker 对外访问后端的 HTTPS 域名根地址
+
+`docker-compose.yml` 默认会读取宿主机环境变量中的 `API_TOKEN`；如果你希望直接从 `.env` 加载，可先执行导出，或按你的运行方式让 Compose 读取 `.env`。
+
 ### 2. 启动服务
+
+当前 `docker-compose.yml` 默认直接使用预构建镜像：
+
+```bash
+docker compose up -d
+```
+
+如果你想先手动本地打包再启动，可使用：
+
+```bash
+docker build -t ghcr.io/likesrt/email-workers-python:latest .
+docker compose up -d
+```
+
+或者把 [docker-compose.yml](docker-compose.yml) 中注释掉的 `build:` 配置恢复后执行：
 
 ```bash
 docker compose up -d --build
@@ -346,6 +444,30 @@ https://mail.example.com
 - `http://db:5432`
 - `http://email-workers-app:8000`
 - `https://your-domain/internal/emails`
+
+## GitHub Actions Docker 镜像构建
+
+项目已提供工作流文件：
+
+- [.github/workflows/docker-image.yml](.github/workflows/docker-image.yml)
+
+触发规则：
+
+- `push` 到 `main`
+- `pull_request`
+- 手动触发 `workflow_dispatch`
+
+行为说明：
+
+- PR / 手动触发：仅构建 Docker 镜像，快速验证是否可打包
+- `main` 分支推送：构建并推送镜像到 `ghcr.io/<owner>/<repo>`
+
+镜像标签：
+
+- `latest`
+- `sha-<7位提交号>`
+
+如果要使用 GHCR，请确保仓库允许 GitHub Actions 写入 packages。
 
 ## 调试建议
 
