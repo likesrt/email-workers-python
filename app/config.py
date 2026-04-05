@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
 
 # 数据库表名常量。
 TABLE_MAILS = "received_mails"
@@ -19,6 +21,36 @@ MAX_SINGLE_ATTACHMENT_BYTES = 100 * 1024 * 1024
 MANUAL_CLEANUP_DEFAULT_MINUTES = 24 * 60
 AUTO_CLEANUP_DEFAULT_INTERVAL_MINUTES = 10
 AUTO_CLEANUP_DEFAULT_BEFORE_MINUTES = 10
+
+
+def _parse_env_line(line: str) -> tuple[str, str] | None:
+    """解析单行 .env 配置并忽略空行、注释与非法内容。"""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    if stripped.startswith("export "):
+        stripped = stripped[7:].strip()
+    if "=" not in stripped:
+        return None
+    name, value = stripped.split("=", 1)
+    return name.strip(), value.strip().strip("\"'")
+
+
+def _load_dotenv_if_exists() -> None:
+    """在项目根目录存在 .env 时补充加载未显式设置的环境变量。"""
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.is_file():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        parsed = _parse_env_line(line)
+        if not parsed:
+            continue
+        name, value = parsed
+        os.environ.setdefault(name, value)
+
+
+# 优先保留当前进程环境变量，其次读取项目根目录中的 .env。
+_load_dotenv_if_exists()
 
 # 运行所需环境变量：统一 API Token 与 PostgreSQL 连接串。
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
