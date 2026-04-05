@@ -188,7 +188,15 @@ conda env create -f environment.yml
 conda activate email-workers
 ```
 
-### 3. 本地启动
+### 3. 准备环境变量
+
+```bash
+cp .env.example .env
+```
+
+然后按需修改 `.env` 中的配置，例如 `DATABASE_URL`、`API_TOKEN`、`PORT`。
+
+### 4. 本地启动
 
 ```bash
 python main.py
