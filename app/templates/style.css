@@ -174,6 +174,10 @@
       align-items: start;
       margin-bottom: 18px;
     }
+    .section-head > :first-child {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
     .section-head h2 {
       margin-bottom: 6px;
     }
@@ -185,6 +189,7 @@
       color: #baf4ee;
       font-size: 12px;
       white-space: nowrap;
+      max-width: 100%;
     }
     .row {
       display: grid;
@@ -294,6 +299,7 @@
       overflow: hidden;
       font-size: 13px;
       line-height: 1;
+      min-width: 0;
     }
     .status-cell {
       flex: 1 1 0;
@@ -306,6 +312,7 @@
       text-overflow: ellipsis;
       color: var(--text-soft);
       transition: color 0.25s, background 0.25s;
+      min-width: 0;
     }
     .status-cell + .status-cell {
       border-left: 1px solid var(--line);
@@ -355,6 +362,9 @@
       font-size: 14px;
       letter-spacing: 0;
     }
+    .pagination > * {
+      min-width: 0;
+    }
     .table-wrap {
       width: 100%;
       max-width: 100%;
@@ -363,6 +373,7 @@
       border-radius: 22px;
       border: 1px solid var(--line);
       background: rgba(255, 255, 255, 0.03);
+      -webkit-overflow-scrolling: touch;
     }
     table {
       width: 100%;
@@ -598,6 +609,30 @@
       .meta-grid {
         grid-template-columns: 1fr;
       }
+      .toolbar > *,
+      .hero-actions > *,
+      .top-links > *,
+      .pagination > * {
+        flex: 1 1 calc(50% - 5px);
+      }
+      .status-shell {
+        flex-wrap: wrap;
+      }
+      .status-cell {
+        flex: 1 1 50%;
+      }
+      .status-cell:nth-child(2n + 1) + .status-cell {
+        border-left: 1px solid var(--line);
+      }
+      .header-table td:first-child {
+        width: 140px;
+      }
+      .mail-html-frame {
+        min-height: 320px;
+      }
+      .doc-card {
+        padding: 18px;
+      }
     }
     @media (max-width: 760px) {
       .wrap {
@@ -613,6 +648,17 @@
       .modal-top {
         flex-direction: column;
       }
+      .section-tag,
+      .meta-pills,
+      .toolbar,
+      .pagination,
+      .hero-actions,
+      .top-links {
+        width: 100%;
+      }
+      .section-tag {
+        white-space: normal;
+      }
       .field,
       .field.wide {
         grid-column: span 12;
@@ -620,7 +666,263 @@
       h1 {
         font-size: 38px;
       }
+      .status-shell {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+      .status-cell {
+        white-space: normal;
+        line-height: 1.4;
+        border-left: 0;
+      }
+      .status-cell + .status-cell {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+      }
+      .toolbar > *,
+      .hero-actions > *,
+      .top-links > *,
+      .pagination > * {
+        flex: 1 1 100%;
+        width: 100%;
+      }
+      .pagination .pill {
+        justify-content: center;
+      }
+      .table-wrap {
+        margin: 0 -2px;
+      }
+      table {
+        min-width: 760px;
+      }
+      th,
+      td {
+        padding: 12px 14px;
+      }
+      .col-time {
+        width: 160px;
+      }
+      .col-to,
+      .col-from,
+      .col-message-id {
+        width: 190px;
+      }
+      .col-subject {
+        width: 220px;
+      }
       .modal-backdrop {
         padding: 12px;
+      }
+      .modal {
+        width: 100%;
+        max-height: calc(100vh - 24px);
+      }
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
+      .meta-card,
+      .detail-card {
+        padding: 14px;
+      }
+      .header-table,
+      .header-table tbody,
+      .header-table tr,
+      .header-table td {
+        display: block;
+        width: 100%;
+      }
+      .header-table td {
+        padding: 8px 0;
+        border-bottom: 0;
+      }
+      .header-table td:first-child {
+        width: 100%;
+        padding-bottom: 2px;
+      }
+      .attachment-row {
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+      .attachment-meta,
+      .attachment-dl {
+        white-space: normal;
+      }
+      .code-box,
+      .raw-box,
+      .body-box,
+      .html-box {
+        font-size: 13px;
+      }
+      .mail-html-frame {
+        min-height: 260px;
+      }
+      .doc-card {
+        padding: 16px;
+        border-radius: 20px;
+      }
+      .doc-card h3 {
+        font-size: 20px;
+      }
+      .doc-list {
+        padding-left: 16px;
+      }
+      .hero-text,
+      .doc-card p,
+      .doc-card li,
+      .doc-card .small,
+      .section-note {
+        word-break: break-word;
+      }
+    }
+    @media (max-width: 560px) {
+      .wrap {
+        padding: 14px 10px 24px;
+      }
+      .hero,
+      .section-panel,
+      .modal {
+        padding: 14px;
+        border-radius: 18px;
+      }
+      h1 {
+        font-size: 32px;
+        line-height: 1.08;
+      }
+      h2 {
+        font-size: 22px;
+      }
+      .eyebrow {
+        padding: 5px 10px;
+        font-size: 11px;
+        letter-spacing: 0.12em;
+      }
+      .hero-text,
+      .section-note,
+      .doc-card p,
+      .doc-card li,
+      .doc-card .small,
+      .small,
+      .status,
+      .status-label {
+        font-size: 13px;
+      }
+      .panel-note,
+      .doc-card,
+      .meta-card,
+      .detail-card {
+        padding: 14px;
+      }
+      button,
+      .nav-link,
+      .pagination .pill {
+        min-height: 44px;
+        padding: 10px 14px;
+        white-space: normal;
+        line-height: 1.35;
+      }
+      .status-shell {
+        border-radius: 16px;
+      }
+      .status-cell {
+        align-items: flex-start;
+        padding: 12px;
+      }
+      .status-label {
+        flex: 1;
+      }
+      .pagination {
+        gap: 8px;
+      }
+      .pagination .pill {
+        justify-content: flex-start;
+      }
+      .table-wrap {
+        margin: 0;
+        border-radius: 18px;
+        overflow: visible;
+        background: transparent;
+        border: 0;
+      }
+      table,
+      tbody,
+      tr,
+      td {
+        display: block;
+        width: 100%;
+      }
+      thead {
+        display: none;
+      }
+      table {
+        min-width: 0;
+      }
+      tbody {
+        display: grid;
+        gap: 12px;
+      }
+      tbody tr {
+        padding: 14px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.04);
+      }
+      tbody td {
+        padding: 0;
+        border-bottom: 0;
+      }
+      tbody td + td {
+        margin-top: 10px;
+      }
+      tbody td::before {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-soft);
+      }
+      tbody td.col-time::before { content: "收到时间"; }
+      tbody td.col-to::before { content: "收件邮箱"; }
+      tbody td.col-from::before { content: "发件邮箱"; }
+      tbody td.col-subject::before { content: "主题"; }
+      tbody td.col-message-id::before { content: "Message-ID"; }
+      tbody td.col-actions::before { content: "操作"; }
+      .copy-text {
+        white-space: normal;
+        word-break: break-word;
+      }
+      .col-actions button {
+        width: 100%;
+      }
+      .empty {
+        padding: 24px 14px;
+        text-align: left;
+      }
+      .empty::before {
+        content: none;
+      }
+      .modal-backdrop {
+        align-items: flex-start;
+        padding: 10px;
+      }
+      .modal {
+        margin-top: 6px;
+        max-height: calc(100vh - 20px);
+      }
+      .modal-top,
+      .attachment-row {
+        gap: 10px;
+      }
+      .body-box,
+      .raw-box,
+      .code-box {
+        padding: 14px;
+        line-height: 1.55;
+      }
+      .doc-grid {
+        gap: 12px;
+      }
+      .doc-list {
+        padding-left: 14px;
       }
     }
