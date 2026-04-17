@@ -441,6 +441,40 @@
         ].join("");
       }
 
+      function getExtractionStatusMeta(item) {
+        const status = String(item && item.extractionStatus || "pending");
+        if (status === "failed") {
+          return { label: "识别失败", kind: "failed" };
+        }
+        if (status === "done") {
+          return { label: item && item.verificationCode ? "已识别" : "无验证码", kind: "done" };
+        }
+        return { label: "识别中", kind: "pending" };
+      }
+
+      function renderExtractionStatusCell(item) {
+        const meta = getExtractionStatusMeta(item);
+        const title = item && item.extractionError ? ' title="' + escapeHtml(item.extractionError) + '"' : "";
+        return [
+          '<td class="col-status"><span class="status-pill" data-kind="',
+          escapeHtml(meta.kind),
+          '"',
+          title,
+          '>',
+          escapeHtml(meta.label),
+          '</span></td>'
+        ].join("");
+      }
+
+      function renderActionCell(item) {
+        return [
+          '<td class="col-actions"><div class="action-stack">',
+          '<button class="secondary detail-btn" type="button" data-id="', escapeHtml(item.id || ""), '">查看详情</button>',
+          '<button class="secondary retry-extraction-btn" type="button" data-id="', escapeHtml(item.id || ""), '">重新识别</button>',
+          '</div></td>'
+        ].join("");
+      }
+
       function renderHeaderTable(headers) {
         const entries = Object.entries(headers || {});
         if (entries.length === 0) return '<div class="small">暂无头信息</div>';
@@ -466,7 +500,7 @@
 
       function renderTable(items) {
         if (!Array.isArray(items) || items.length === 0) {
-          mailTableBody.innerHTML = '<tr><td colspan="8" class="empty">没有符合条件的邮件</td></tr>';
+          mailTableBody.innerHTML = '<tr><td colspan="9" class="empty">没有符合条件的邮件</td></tr>';
           return;
         }
         const rows = items.map(function (item) {
@@ -483,9 +517,10 @@
             renderCopyCell(item.from, 'col-from'),
             renderCopyCell(item.subject, 'col-subject'),
             codeCell,
+            renderExtractionStatusCell(item),
             urlCell,
             renderCopyCell(item.messageId, 'col-message-id'),
-            '<td class="col-actions"><button class="secondary detail-btn" type="button" data-id="', escapeHtml(item.id || ""), '">查看详情</button></td>',
+            renderActionCell(item),
             '</tr>'
           ].join("");
         }).join("");
@@ -562,7 +597,9 @@
           renderMetaCard("收件人", data.to),
           renderMetaCard("接收时间", formatDateTimeDisplay(data.receivedAt || data.date)),
           renderMetaCard("Message-ID", data.messageId),
-          renderMetaCard("日期头", data.date)
+          renderMetaCard("日期头", data.date),
+          renderMetaCard("识别状态", getExtractionStatusMeta(data).label),
+          renderMetaCard("识别时间", formatDateTimeDisplay(data.extractedAt || ""))
         ].join("");
         if (data.htmlBody) {
           await renderHtmlBody(data.htmlBody, attachments || []);
@@ -570,6 +607,9 @@
           detailBody.textContent = cleanupBodyText(data.textBody || htmlToText(data.raw)) || "没有提取到可读正文。";
         }
         detailHeaders.innerHTML = renderHeaderTable(data.headers);
+        if (data.extractionError) {
+          detailHeaders.innerHTML = '<div class="small">识别错误: ' + escapeHtml(data.extractionError) + '</div>' + detailHeaders.innerHTML;
+        }
         detailRaw.textContent = data.raw || "暂无原始内容";
       }
 
@@ -634,6 +674,17 @@
           setAuthStatus("Token 验证成功。", "success");
         } catch (error) {
           setAuthStatus("Token 验证失败: " + (error && error.message ? error.message : String(error)), "error");
+        }
+      }
+
+      async function retryExtraction(id) {
+        try {
+          setActionStatus("正在重新识别验证码...", "info");
+          await fetchJson("/api/mails/" + encodeURIComponent(id) + "/retry-extraction", { method: "POST" });
+          setActionStatus("已重新执行识别。", "success");
+          await loadMails(state.page, { loadingText: "刷新中..." });
+        } catch (error) {
+          setActionStatus("重新识别失败: " + (error && error.message ? error.message : String(error)), "error");
         }
       }
 
@@ -742,10 +793,16 @@
       mailTableBody.addEventListener("click", function (event) {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
-        const button = target.closest(".detail-btn");
-        if (button instanceof HTMLElement) {
-          const id = button.getAttribute("data-id");
+        const detailButton = target.closest(".detail-btn");
+        if (detailButton instanceof HTMLElement) {
+          const id = detailButton.getAttribute("data-id");
           if (id) loadMailDetail(id);
+          return;
+        }
+        const retryButton = target.closest(".retry-extraction-btn");
+        if (retryButton instanceof HTMLElement) {
+          const id = retryButton.getAttribute("data-id");
+          if (id) retryExtraction(id);
           return;
         }
         const cell = target.closest(".copy-cell");

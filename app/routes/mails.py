@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from app.auth import require_api_token
 from app.config import DEFAULT_PAGE, DEFAULT_PAGE_SIZE
@@ -13,6 +13,8 @@ from app.services.mail import (
     list_mails,
     map_mail_detail,
     parse_filters,
+    retry_mail_extraction,
+    run_mail_extraction_job,
 )
 
 
@@ -49,6 +51,25 @@ def handle_get_mail_detail_by_id(mail_id: str, request: Request) -> dict[str, ob
     if not mail:
         raise HTTPException(status_code=404, detail="Mail not found.")
     return map_mail_detail(mail)
+
+
+@router.post("/api/mails/{mail_id}/retry-extraction")
+def handle_retry_mail_extraction(
+    mail_id: str, request: Request, background_tasks: BackgroundTasks
+) -> dict[str, object]:
+    """按邮件 ID 重新执行验证码与激活链接识别。"""
+    require_api_token(request)
+    mail = get_mail_by_id(mail_id)
+    if not mail:
+        raise HTTPException(status_code=404, detail="Mail not found.")
+    item = retry_mail_extraction(mail_id)
+    background_tasks.add_task(
+        run_mail_extraction_job,
+        mail_id,
+        str(mail["subject"]),
+        str(mail.get("raw_text") or ""),
+    )
+    return item
 
 
 @router.get("/api/mail/{email}")

@@ -131,6 +131,8 @@ def map_mail_summary(row: dict[str, Any]) -> dict[str, Any]:
         "verificationCode": row.get("verification_code"),
         "activationUrl": row.get("activation_url"),
         "extractionStatus": str(row.get("extraction_status") or "pending"),
+        "extractionError": str(row.get("extraction_error") or ""),
+        "extractedAt": isoformat_value(row.get("extracted_at")),
     }
 
 
@@ -154,6 +156,11 @@ def map_mail_detail(row: dict[str, Any]) -> dict[str, Any]:
         "subject": str(row["subject"]),
         "date": str(row["date_header"]),
         "receivedAt": isoformat_value(row["received_at"]),
+        "verificationCode": row.get("verification_code"),
+        "activationUrl": row.get("activation_url"),
+        "extractionStatus": str(row.get("extraction_status") or "pending"),
+        "extractionError": str(row.get("extraction_error") or ""),
+        "extractedAt": isoformat_value(row.get("extracted_at")),
         "headers": row.get("headers_json") or {},
         "raw": raw_text,
         "textBody": bodies["textBody"],
@@ -218,7 +225,8 @@ def get_mail_by_id(mail_id: str) -> dict[str, Any] | None:
     """
     sql = f"""
     SELECT id, message_id, mail_from, rcpt_to, subject, date_header,
-           received_at, headers_json, raw_text
+           received_at, headers_json, raw_text, verification_code,
+           activation_url, extraction_status, extraction_error, extracted_at
     FROM {TABLE_MAILS} WHERE id = %s LIMIT 1;
     """
     with get_connection() as conn:
@@ -366,6 +374,60 @@ def _save_mail_attachments(conn: Any, mail_id: str, raw_text: str) -> None:
 def run_mail_extraction_job(mail_id: str, subject: str, raw_text: str) -> None:
     """
     在后台任务中执行邮件识别并回写数据库。
+
+    Args:
+        mail_id: 邮件主键 ID
+        subject: 邮件主题
+        raw_text: 原始邮件文本
+
+    Returns:
+        None
+    """
+    _run_extraction_job(mail_id, subject, raw_text)
+
+
+def retry_mail_extraction(mail_id: str) -> dict[str, Any]:
+    """
+    重置指定邮件的识别状态并返回当前摘要。
+
+    Args:
+        mail_id: 邮件主键 ID
+
+    Returns:
+        已重置为待识别状态的邮件摘要
+
+    Raises:
+        HTTPException: 邮件不存在时抛出 404
+    """
+    mail = get_mail_by_id(mail_id)
+    if not mail:
+        raise HTTPException(status_code=404, detail="Mail not found.")
+    _mark_mail_extraction_pending_by_id(mail_id)
+    refreshed = get_mail_by_id(mail_id)
+    if not refreshed:
+        raise HTTPException(status_code=404, detail="Mail not found.")
+    return map_mail_summary(refreshed)
+
+
+def _mark_mail_extraction_pending_by_id(mail_id: str) -> None:
+    """
+    按邮件 ID 单独重置识别状态。
+
+    Args:
+        mail_id: 邮件主键 ID
+
+    Returns:
+        None
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(SQL_MARK_MAIL_EXTRACTION_PENDING, [mail_id])
+        conn.commit()
+
+
+def _run_extraction_job(mail_id: str, subject: str, raw_text: str) -> None:
+    """
+    执行一次完整的邮件识别作业。
 
     Args:
         mail_id: 邮件主键 ID

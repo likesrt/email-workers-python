@@ -420,6 +420,9 @@
       width: 120px;
       font-variant-numeric: tabular-nums;
     }
+    .col-status {
+      width: 150px;
+    }
     .col-url {
       width: 100px;
     }
@@ -427,7 +430,7 @@
       width: 220px;
     }
     .col-actions {
-      width: 120px;
+      width: 168px;
     }
     .link-btn {
       display: inline-flex;
@@ -458,6 +461,41 @@
       text-overflow: ellipsis;
       white-space: nowrap;
       line-height: 1.45;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-soft);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .status-pill[data-kind="pending"] {
+      color: #ffd6a8;
+      border-color: rgba(255, 159, 67, 0.24);
+      background: rgba(255, 159, 67, 0.12);
+    }
+    .status-pill[data-kind="done"] {
+      color: #a3f5d3;
+      border-color: rgba(52, 211, 153, 0.24);
+      background: rgba(52, 211, 153, 0.12);
+    }
+    .status-pill[data-kind="failed"] {
+      color: #ffb7c0;
+      border-color: rgba(255, 93, 115, 0.24);
+      background: rgba(255, 93, 115, 0.12);
+    }
+    .action-stack {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .action-stack > * {
+      flex: 1 1 auto;
     }
     .empty {
       padding: 28px 16px;
@@ -915,6 +953,7 @@
       tbody td.col-from::before { content: "发件邮箱"; }
       tbody td.col-subject::before { content: "主题"; }
       tbody td.col-code::before { content: "验证码"; }
+      tbody td.col-status::before { content: "识别状态"; }
       tbody td.col-url::before { content: "激活链接"; }
       tbody td.col-message-id::before { content: "Message-ID"; }
       tbody td.col-actions::before { content: "操作"; }
