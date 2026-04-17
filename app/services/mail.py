@@ -523,6 +523,12 @@ def _extract_code_and_url_with_fallback(
             }
             logger.info("开始 AI 识别。mail_id=%s provider=%s", mail_id, AI_PROVIDER)
             result = extract_with_ai(subject, body_text, config)
+            logger.info(
+                "AI 原始返回。mail_id=%s code=%r url=%r",
+                mail_id,
+                result.get("code"),
+                result.get("url"),
+            )
             sanitized = sanitize_extraction_result(subject, raw_text, result)
             if sanitized.get("code") or sanitized.get("url"):
                 logger.info(
