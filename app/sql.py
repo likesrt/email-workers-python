@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS {TABLE_MAILS} (
   raw_text TEXT NOT NULL,
   verification_code TEXT,
   activation_url TEXT,
-  extraction_status TEXT NOT NULL DEFAULT 'pending',
+  extraction_status TEXT NOT NULL DEFAULT 'idle',
   extraction_error TEXT NOT NULL DEFAULT '',
   extraction_attempts INTEGER NOT NULL DEFAULT 0,
   extracted_at TIMESTAMPTZ,
@@ -88,7 +88,15 @@ ADD COLUMN IF NOT EXISTS activation_url TEXT;
 
 SQL_ALTER_MAILS_ADD_EXTRACTION_STATUS = f"""
 ALTER TABLE {TABLE_MAILS}
-ADD COLUMN IF NOT EXISTS extraction_status TEXT NOT NULL DEFAULT 'pending';
+ADD COLUMN IF NOT EXISTS extraction_status TEXT NOT NULL DEFAULT 'idle';
+"""
+
+SQL_BACKFILL_MAILS_EXTRACTION_STATUS = f"""
+UPDATE {TABLE_MAILS}
+SET extraction_status = 'idle'
+WHERE extraction_status = 'pending'
+  AND extracted_at IS NULL
+  AND extraction_attempts = 0;
 """
 
 SQL_ALTER_MAILS_ADD_EXTRACTION_ERROR = f"""

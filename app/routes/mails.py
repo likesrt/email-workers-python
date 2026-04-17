@@ -10,6 +10,7 @@ from app.services.mail import (
     count_mails,
     get_mail_by_id,
     get_mail_by_id_and_address,
+    get_mail_summary_by_id,
     list_mails,
     map_mail_detail,
     parse_filters,
@@ -51,6 +52,16 @@ def handle_get_mail_detail_by_id(mail_id: str, request: Request) -> dict[str, ob
     if not mail:
         raise HTTPException(status_code=404, detail="Mail not found.")
     return map_mail_detail(mail)
+
+
+@router.get("/api/mails/{mail_id}/summary")
+def handle_get_mail_summary_by_id(mail_id: str, request: Request) -> dict[str, object]:
+    """按邮件 ID 查询邮件摘要，供列表局部刷新使用。"""
+    require_api_token(request)
+    item = get_mail_summary_by_id(mail_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Mail not found.")
+    return item
 
 
 @router.post("/api/mails/{mail_id}/retry-extraction")

@@ -20,6 +20,7 @@ from app.services.cleanup import load_auto_cleanup_state, replace_auto_cleanup_t
 
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 @asynccontextmanager

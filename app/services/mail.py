@@ -130,7 +130,7 @@ def map_mail_summary(row: dict[str, Any]) -> dict[str, Any]:
         "receivedAt": isoformat_value(row["received_at"]),
         "verificationCode": row.get("verification_code"),
         "activationUrl": row.get("activation_url"),
-        "extractionStatus": str(row.get("extraction_status") or "pending"),
+        "extractionStatus": _normalize_extraction_status(row),
         "extractionError": str(row.get("extraction_error") or ""),
         "extractedAt": isoformat_value(row.get("extracted_at")),
     }
@@ -158,7 +158,7 @@ def map_mail_detail(row: dict[str, Any]) -> dict[str, Any]:
         "receivedAt": isoformat_value(row["received_at"]),
         "verificationCode": row.get("verification_code"),
         "activationUrl": row.get("activation_url"),
-        "extractionStatus": str(row.get("extraction_status") or "pending"),
+        "extractionStatus": _normalize_extraction_status(row),
         "extractionError": str(row.get("extraction_error") or ""),
         "extractedAt": isoformat_value(row.get("extracted_at")),
         "headers": row.get("headers_json") or {},
@@ -166,6 +166,25 @@ def map_mail_detail(row: dict[str, Any]) -> dict[str, Any]:
         "textBody": bodies["textBody"],
         "htmlBody": bodies["htmlBody"],
     }
+
+
+def _normalize_extraction_status(row: dict[str, Any]) -> str:
+    """
+    规范化邮件识别状态，避免旧数据被误显示为识别中。
+
+    Args:
+        row: 数据库查询结果行
+
+    Returns:
+        规范化后的识别状态
+    """
+    status = str(row.get("extraction_status") or "idle")
+    if status != "pending":
+        return status
+    # 旧数据加列后会继承 pending 默认值，这里改成 idle 避免历史邮件被误判为识别中。
+    if row.get("extracted_at") or int(row.get("extraction_attempts") or 0) > 0:
+        return status
+    return "idle"
 
 
 def count_mails(filters: MailListFilters) -> int:
@@ -201,7 +220,8 @@ def list_mails(filters: MailListFilters) -> list[dict[str, Any]]:
     offset = (filters.page - 1) * filters.pageSize
     sql = f"""
     SELECT id, message_id, mail_from, rcpt_to, subject, date_header, received_at,
-           verification_code, activation_url, extraction_status
+           verification_code, activation_url, extraction_status, extraction_error,
+           extraction_attempts, extracted_at
     FROM {TABLE_MAILS} {where_sql}
     ORDER BY received_at DESC, id DESC
     LIMIT %s OFFSET %s;
@@ -226,7 +246,8 @@ def get_mail_by_id(mail_id: str) -> dict[str, Any] | None:
     sql = f"""
     SELECT id, message_id, mail_from, rcpt_to, subject, date_header,
            received_at, headers_json, raw_text, verification_code,
-           activation_url, extraction_status, extraction_error, extracted_at
+           activation_url, extraction_status, extraction_error,
+           extraction_attempts, extracted_at
     FROM {TABLE_MAILS} WHERE id = %s LIMIT 1;
     """
     with get_connection() as conn:
@@ -248,7 +269,9 @@ def get_mail_by_id_and_address(address: str, mail_id: str) -> dict[str, Any] | N
     """
     sql = f"""
     SELECT id, message_id, mail_from, rcpt_to, subject, date_header,
-           received_at, headers_json, raw_text
+           received_at, headers_json, raw_text, verification_code,
+           activation_url, extraction_status, extraction_error,
+           extraction_attempts, extracted_at
     FROM {TABLE_MAILS} WHERE rcpt_to = %s AND id = %s LIMIT 1;
     """
     with get_connection() as conn:
@@ -386,6 +409,20 @@ def run_mail_extraction_job(mail_id: str, subject: str, raw_text: str) -> None:
     _run_extraction_job(mail_id, subject, raw_text)
 
 
+def get_mail_summary_by_id(mail_id: str) -> dict[str, Any] | None:
+    """
+    根据邮件 ID 查询单条摘要，供列表局部刷新使用。
+
+    Args:
+        mail_id: 邮件主键 ID
+
+    Returns:
+        邮件摘要字典，不存在时返回 None
+    """
+    mail = get_mail_by_id(mail_id)
+    return map_mail_summary(mail) if mail else None
+
+
 def retry_mail_extraction(mail_id: str) -> dict[str, Any]:
     """
     重置指定邮件的识别状态并返回当前摘要。
@@ -403,10 +440,10 @@ def retry_mail_extraction(mail_id: str) -> dict[str, Any]:
     if not mail:
         raise HTTPException(status_code=404, detail="Mail not found.")
     _mark_mail_extraction_pending_by_id(mail_id)
-    refreshed = get_mail_by_id(mail_id)
+    refreshed = get_mail_summary_by_id(mail_id)
     if not refreshed:
         raise HTTPException(status_code=404, detail="Mail not found.")
-    return map_mail_summary(refreshed)
+    return refreshed
 
 
 def _mark_mail_extraction_pending_by_id(mail_id: str) -> None:
@@ -437,12 +474,12 @@ def _run_extraction_job(mail_id: str, subject: str, raw_text: str) -> None:
     Returns:
         None
     """
-    logger.info("Start mail extraction. mail_id=%s", mail_id)
+    logger.info("开始邮件识别。mail_id=%s", mail_id)
     try:
         result = _extract_code_and_url_with_fallback(mail_id, subject, raw_text)
         _save_extraction_result(mail_id, result, "done", "")
         logger.info(
-            "Finish mail extraction. mail_id=%s code=%s url=%s",
+            "邮件识别完成。mail_id=%s code=%s url=%s",
             mail_id,
             bool(result.get("code")),
             bool(result.get("url")),
@@ -454,7 +491,7 @@ def _run_extraction_job(mail_id: str, subject: str, raw_text: str) -> None:
             "failed",
             str(exc),
         )
-        logger.exception("Mail extraction failed. mail_id=%s", mail_id)
+        logger.exception("邮件识别失败。mail_id=%s", mail_id)
 
 
 def _extract_code_and_url_with_fallback(
@@ -484,28 +521,48 @@ def _extract_code_and_url_with_fallback(
                 "timeout": AI_TIMEOUT,
                 "retry_times": AI_RETRY_TIMES,
             }
-            logger.info("Start AI mail extraction. mail_id=%s provider=%s", mail_id, AI_PROVIDER)
+            logger.info("开始 AI 识别。mail_id=%s provider=%s", mail_id, AI_PROVIDER)
             result = extract_with_ai(subject, body_text, config)
             sanitized = sanitize_extraction_result(subject, raw_text, result)
             if sanitized.get("code") or sanitized.get("url"):
                 logger.info(
-                    "AI mail extraction matched. mail_id=%s code=%s url=%s",
+                    "AI 识别命中。mail_id=%s code=%s url=%s",
                     mail_id,
                     bool(sanitized.get("code")),
                     bool(sanitized.get("url")),
                 )
                 return {**sanitized, "attempts": AI_RETRY_TIMES + 1}
-            logger.info("AI mail extraction returned no valid result. mail_id=%s", mail_id)
+            logger.info(
+                "AI 返回结果无效，已被过滤。mail_id=%s 原始=%s 清洗后=%s",
+                mail_id,
+                _summarize_extraction_result(result),
+                _summarize_extraction_result(sanitized),
+            )
         except Exception:
-            logger.exception("AI mail extraction crashed. mail_id=%s", mail_id)
+            logger.exception("AI 识别异常，准备回退规则识别。mail_id=%s", mail_id)
     rule_result = extract_code_and_url(subject, raw_text)
     logger.info(
-        "Rule mail extraction finished. mail_id=%s code=%s url=%s",
+        "规则识别完成。mail_id=%s code=%s url=%s",
         mail_id,
         bool(rule_result.get("code")),
         bool(rule_result.get("url")),
     )
     return {**rule_result, "attempts": 1}
+
+
+def _summarize_extraction_result(result: dict[str, Any]) -> str:
+    """
+    将识别结果压缩成适合日志输出的短文本。
+
+    Args:
+        result: 识别结果字典
+
+    Returns:
+        适合直接记录到日志中的摘要文本
+    """
+    code = str(result.get("code") or "")[:80]
+    url = str(result.get("url") or "")[:160]
+    return f"code={code or '-'} url={url or '-'}"
 
 
 def _extract_body_for_ai(raw_text: str) -> str:

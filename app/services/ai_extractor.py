@@ -51,7 +51,7 @@ def extract_with_ai(
             _extract_with_openai,
         )
     except Exception as exc:
-        logger.warning("AI extraction failed after retries: %s", exc)
+        logger.warning("AI 识别在重试后仍失败：%s", _format_ai_error(exc))
         return {"code": None, "url": None}
 
 
@@ -88,13 +88,13 @@ def _extract_with_retries(
                 raise
             sleep_seconds = _get_retry_delay_seconds(attempt)
             logger.warning(
-                "AI extraction attempt %s failed, retry in %.1fs: %s",
+                "AI 识别第 %s 次失败，将在 %.1f 秒后重试：%s",
                 attempt + 1,
                 sleep_seconds,
-                exc,
+                _format_ai_error(exc),
             )
             time.sleep(sleep_seconds)
-    raise RuntimeError("AI extraction retries exhausted.")
+    raise RuntimeError("AI 识别重试次数已耗尽。")
 
 
 def _extract_with_openai(
@@ -139,6 +139,41 @@ def _extract_with_openai(
     content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
     result = json.loads(content)
     return {"code": result.get("code"), "url": result.get("url")}
+
+
+def _format_ai_error(exc: Exception) -> str:
+    """
+    将 AI 请求异常整理成便于排查的中文日志文本。
+
+    Args:
+        exc: AI 请求过程中抛出的异常
+
+    Returns:
+        适合直接写入日志的错误描述
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        response = exc.response
+        body = _truncate_error_body(response.text)
+        return f"HTTP {response.status_code}，响应体={body}"
+    if isinstance(exc, httpx.TimeoutException):
+        return "请求超时"
+    if isinstance(exc, httpx.NetworkError):
+        return f"网络错误：{exc}"
+    return str(exc)
+
+
+def _truncate_error_body(text: str) -> str:
+    """
+    截断错误响应体，避免日志被大段 HTML 或 JSON 淹没。
+
+    Args:
+        text: 原始响应体文本
+
+    Returns:
+        截断后的响应体
+    """
+    compact = " ".join(str(text or "").split())
+    return compact[:300] or "<empty>"
 
 
 def _extract_with_anthropic(
