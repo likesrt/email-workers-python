@@ -34,3 +34,4 @@ Thumbs.db
 .claude/
 CLAUDE.local.md
 cc-swarm/
+test_extraction.py

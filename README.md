@@ -118,10 +118,26 @@ FastAPI 负责：
 - 校验所有 API 路由的 `API_TOKEN`
 - 解析 raw 邮件内容
 - 提取 `Message-ID`、`Subject`、`Date`、头信息、发件地址
+- **自动识别验证码和激活链接**（支持规则提取和可选 AI 识别）
 - 将邮件写入 PostgreSQL
 - 提供控制台页面、列表查询、详情查询、历史清理接口
 
 数据库表会在启动时自动初始化。
+
+### 验证码和激活链接识别
+
+系统支持自动从邮件中提取验证码和激活链接：
+
+**规则提取**（默认启用）：
+- 验证码：识别 4-8 位纯数字或字母数字混合，支持空格/短横线分隔符，过滤年份噪声
+- 激活链接：识别包含 activate/verify/confirm/reset 等关键词的 URL
+
+**AI 识别**（可选）：
+- 支持 OpenAI 和 Anthropic 兼容接口
+- 通过环境变量启用，失败自动回退到规则提取
+- 超时保护（默认 10 秒）
+
+控制台邮件列表会显示「验证码」和「激活链接」列，验证码支持点击复制，链接支持点击打开。
 
 ## 环境变量
 
@@ -133,12 +149,30 @@ FastAPI 负责：
 - `API_TOKEN`：统一鉴权 Token
 - `PORT`：可选，默认 `8000`
 
+可选配置（AI 识别）：
+
+- `AI_EXTRACTION_ENABLED`：是否启用 AI 识别验证码和链接，默认 `false`
+- `AI_PROVIDER`：AI 提供商，`openai` 或 `anthropic`，默认 `openai`
+- `AI_BASE_URL`：AI 接口地址
+- `AI_API_KEY`：AI API 密钥
+- `AI_MODEL`：AI 模型名称，默认 `gpt-4`
+- `AI_TIMEOUT`：AI 请求超时时间（秒），默认 `10`
+
 示例：
 
 ```bash
+# 必须配置
 DATABASE_URL=postgresql://user:password@127.0.0.1:5432/maildb
 API_TOKEN=your-secret-token
 PORT=8000
+
+# AI 识别（可选）
+AI_EXTRACTION_ENABLED=true
+AI_PROVIDER=openai
+AI_BASE_URL=http://127.0.0.1:23333/v1
+AI_API_KEY=your-api-key
+AI_MODEL=minimax-m2.5
+AI_TIMEOUT=10
 ```
 
 ### Cloudflare Worker
@@ -282,6 +316,12 @@ GET /api/mails?rcptTo=&after=&before=&page=1&pageSize=20
 - `before`：结束时间，ISO 格式
 - `page`：页码，从 1 开始
 - `pageSize`：每页条数，最大 100
+
+返回数据包含：
+
+- `verificationCode`：自动识别的验证码（若存在）
+- `activationUrl`：自动识别的激活链接（若存在）
+- 其他邮件基本信息（id、messageId、from、to、subject、date、receivedAt）
 
 ### 3. 查询邮件详情
 

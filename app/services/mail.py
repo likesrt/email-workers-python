@@ -24,6 +24,15 @@ from app.models import IngestEmailRequest, MailListFilters
 from app.sql import SQL_INSERT_MAIL, TABLE_MAILS
 from app.utils import isoformat_value, parse_datetime_filter, parse_positive_integer, truncate_text
 from app.services.attachments import insert_attachments
+from app.services.code_extractor import extract_code_and_url
+from app.config import (
+    AI_EXTRACTION_ENABLED,
+    AI_PROVIDER,
+    AI_BASE_URL,
+    AI_API_KEY,
+    AI_MODEL,
+    AI_TIMEOUT,
+)
 
 
 def build_where_clause(filters: MailListFilters) -> tuple[str, list[Any]]:
@@ -68,17 +77,91 @@ def parse_filters(
     )
 
 
-def map_mail_summary(row: dict[str, Any]) -> dict[str, Any]:
-    """将数据库行映射为邮件列表摘要结构。"""
+def map_mail_summary(row: dict[str, Any], raw_text: str | None = None) -> dict[str, Any]:
+    """
+    将数据库行映射为邮件列表摘要结构。
+
+    优先使用 AI 提取（若启用），否则使用规则提取验证码和激活 URL。
+
+    Args:
+        row: 数据库查询结果行
+        raw_text: 邮件原始文本（可选），用于提取验证码和 URL
+
+    Returns:
+        邮件摘要字典，包含基本信息、验证码和激活 URL（若识别到）
+    """
+    subject = str(row["subject"])
+    verification_code = None
+    activation_url = None
+
+    if raw_text:
+        result = _extract_code_and_url_with_fallback(subject, raw_text)
+        verification_code = result.get("code")
+        activation_url = result.get("url")
+
     return {
         "id": str(row["id"]),
         "messageId": str(row["message_id"]),
         "from": str(row["mail_from"]),
         "to": str(row["rcpt_to"]),
-        "subject": str(row["subject"]),
+        "subject": subject,
         "date": str(row["date_header"]),
         "receivedAt": isoformat_value(row["received_at"]),
+        "verificationCode": verification_code,
+        "activationUrl": activation_url,
     }
+
+
+def _extract_code_and_url_with_fallback(subject: str, raw_text: str) -> dict[str, str | None]:
+    """
+    提取验证码和 URL，优先使用 AI，失败则回退到规则提取。
+
+    Args:
+        subject: 邮件主题
+        raw_text: 邮件原始文本
+
+    Returns:
+        包含 code 和 url 的字典
+    """
+    if AI_EXTRACTION_ENABLED and AI_BASE_URL and AI_API_KEY:
+        try:
+            from app.services.ai_extractor import extract_with_ai
+            body_text = _extract_body_for_ai(raw_text)
+            config = {
+                "provider": AI_PROVIDER,
+                "base_url": AI_BASE_URL,
+                "api_key": AI_API_KEY,
+                "model": AI_MODEL,
+                "timeout": AI_TIMEOUT,
+            }
+            result = extract_with_ai(subject, body_text, config)
+            if result.get("code") or result.get("url"):
+                return result
+        except Exception:
+            pass
+
+    return extract_code_and_url(subject, raw_text)
+
+
+def _extract_body_for_ai(raw_text: str) -> str:
+    """
+    从原始邮件中提取正文用于 AI 识别。
+
+    Args:
+        raw_text: 邮件原始文本
+
+    Returns:
+        可读正文文本
+    """
+    bodies = extract_mail_bodies(raw_text)
+    text_body = bodies.get("textBody", "")
+    if text_body:
+        return text_body
+    html_body = bodies.get("htmlBody", "")
+    if html_body:
+        import re
+        return re.sub(r"<[^>]+>", " ", html_body)
+    return ""
 
 
 def map_mail_detail(row: dict[str, Any]) -> dict[str, Any]:
@@ -112,11 +195,19 @@ def count_mails(filters: MailListFilters) -> int:
 
 
 def list_mails(filters: MailListFilters) -> list[dict[str, Any]]:
-    """按分页条件查询邮件列表。"""
+    """
+    按分页条件查询邮件列表。
+
+    Args:
+        filters: 查询过滤条件（收件邮箱、时间范围、分页参数）
+
+    Returns:
+        邮件摘要列表，包含验证码字段
+    """
     where_sql, values = build_where_clause(filters)
     offset = (filters.page - 1) * filters.pageSize
     sql = f"""
-    SELECT id, message_id, mail_from, rcpt_to, subject, date_header, received_at
+    SELECT id, message_id, mail_from, rcpt_to, subject, date_header, received_at, raw_text
     FROM {TABLE_MAILS} {where_sql}
     ORDER BY received_at DESC, id DESC
     LIMIT %s OFFSET %s;
@@ -125,7 +216,7 @@ def list_mails(filters: MailListFilters) -> list[dict[str, Any]]:
         with conn.cursor() as cur:
             cur.execute(sql, [*values, filters.pageSize, offset])
             rows = cur.fetchall() or []
-    return [map_mail_summary(row) for row in rows]
+    return [map_mail_summary(row, row.get("raw_text")) for row in rows]
 
 
 def get_mail_by_id(mail_id: str) -> dict[str, Any] | None:

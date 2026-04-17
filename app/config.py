@@ -58,6 +58,14 @@ API_TOKEN = os.getenv("API_TOKEN", "").strip()
 # 附件存储根目录，默认 ./attachments，可通过环境变量覆盖。
 ATTACHMENTS_DIR = os.path.abspath(os.getenv("ATTACHMENTS_DIR", "./attachments"))
 
+# AI 识别配置（可选）。
+AI_EXTRACTION_ENABLED = os.getenv("AI_EXTRACTION_ENABLED", "false").lower() == "true"
+AI_PROVIDER = os.getenv("AI_PROVIDER", "openai")
+AI_BASE_URL = os.getenv("AI_BASE_URL", "").strip()
+AI_API_KEY = os.getenv("AI_API_KEY", "").strip()
+AI_MODEL = os.getenv("AI_MODEL", "gpt-4").strip()
+AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "10"))
+
 
 def ensure_settings() -> None:
     """校验服务运行所需的关键环境变量是否已配置。"""

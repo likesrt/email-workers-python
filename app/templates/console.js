@@ -466,16 +466,24 @@
 
       function renderTable(items) {
         if (!Array.isArray(items) || items.length === 0) {
-          mailTableBody.innerHTML = '<tr><td colspan="6" class="empty">没有符合条件的邮件</td></tr>';
+          mailTableBody.innerHTML = '<tr><td colspan="8" class="empty">没有符合条件的邮件</td></tr>';
           return;
         }
         const rows = items.map(function (item) {
+          const codeCell = item.verificationCode
+            ? renderCopyCell(item.verificationCode, 'col-code')
+            : '<td class="col-code"><span class="small">-</span></td>';
+          const urlCell = item.activationUrl
+            ? '<td class="col-url"><a href="' + escapeHtml(item.activationUrl) + '" target="_blank" class="link-btn">打开</a></td>'
+            : '<td class="col-url"><span class="small">-</span></td>';
           return [
             '<tr>',
             '<td class="col-time">', escapeHtml(formatDateTimeDisplay(item.receivedAt)), '</td>',
             '<td class="col-to">', escapeHtml(item.to || ""), '</td>',
             renderCopyCell(item.from, 'col-from'),
             renderCopyCell(item.subject, 'col-subject'),
+            codeCell,
+            urlCell,
             renderCopyCell(item.messageId, 'col-message-id'),
             '<td class="col-actions"><button class="secondary detail-btn" type="button" data-id="', escapeHtml(item.id || ""), '">查看详情</button></td>',
             '</tr>'

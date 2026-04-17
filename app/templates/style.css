@@ -414,11 +414,37 @@
     .col-subject {
       width: 260px;
     }
+    .col-code {
+      width: 120px;
+      font-variant-numeric: tabular-nums;
+    }
+    .col-url {
+      width: 100px;
+    }
     .col-message-id {
       width: 220px;
     }
     .col-actions {
       width: 120px;
+    }
+    .link-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 32px;
+      padding: 6px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 159, 67, 0.12);
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 13px;
+      white-space: nowrap;
+      transition: transform 0.18s ease, background 0.18s ease;
+    }
+    .link-btn:hover {
+      transform: translateY(-1px);
+      background: rgba(255, 159, 67, 0.2);
     }
     .copy-cell {
       max-width: 100%;
@@ -885,6 +911,8 @@
       tbody td.col-to::before { content: "收件邮箱"; }
       tbody td.col-from::before { content: "发件邮箱"; }
       tbody td.col-subject::before { content: "主题"; }
+      tbody td.col-code::before { content: "验证码"; }
+      tbody td.col-url::before { content: "激活链接"; }
       tbody td.col-message-id::before { content: "Message-ID"; }
       tbody td.col-actions::before { content: "操作"; }
       .copy-text {
