@@ -164,6 +164,7 @@
       gap: 20px;
     }
     .section-panel {
+      min-width: 0;
       padding: 24px;
       background: var(--panel);
     }
@@ -367,6 +368,7 @@
     }
     .table-wrap {
       width: 100%;
+      min-width: 0;
       max-width: 100%;
       overflow-x: auto;
       overflow-y: hidden;
@@ -716,10 +718,11 @@
         justify-content: center;
       }
       .table-wrap {
-        margin: 0 -2px;
+        margin: 0;
+        max-width: 100%;
       }
       table {
-        min-width: 760px;
+        min-width: 720px;
       }
       th,
       td {

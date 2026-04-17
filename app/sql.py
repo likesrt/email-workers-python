@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.config import TABLE_ATTACHMENTS, TABLE_AUTO_CLEANUP, TABLE_MAILS
 
-# 主表：同时保存邮件基础字段、原始内容和头信息。
+# 主表：同时保存邮件基础字段、原始内容、头信息和识别结果。
 SQL_CREATE_TABLE = f"""
 CREATE TABLE IF NOT EXISTS {TABLE_MAILS} (
   id TEXT PRIMARY KEY,
@@ -14,6 +14,12 @@ CREATE TABLE IF NOT EXISTS {TABLE_MAILS} (
   received_at TIMESTAMPTZ NOT NULL,
   headers_json JSONB NOT NULL,
   raw_text TEXT NOT NULL,
+  verification_code TEXT,
+  activation_url TEXT,
+  extraction_status TEXT NOT NULL DEFAULT 'pending',
+  extraction_error TEXT NOT NULL DEFAULT '',
+  extraction_attempts INTEGER NOT NULL DEFAULT 0,
+  extracted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (message_id, rcpt_to)
 );
@@ -70,6 +76,36 @@ ALTER TABLE {TABLE_ATTACHMENTS}
 ADD COLUMN IF NOT EXISTS disposition TEXT NOT NULL DEFAULT 'attachment';
 """
 
+SQL_ALTER_MAILS_ADD_VERIFICATION_CODE = f"""
+ALTER TABLE {TABLE_MAILS}
+ADD COLUMN IF NOT EXISTS verification_code TEXT;
+"""
+
+SQL_ALTER_MAILS_ADD_ACTIVATION_URL = f"""
+ALTER TABLE {TABLE_MAILS}
+ADD COLUMN IF NOT EXISTS activation_url TEXT;
+"""
+
+SQL_ALTER_MAILS_ADD_EXTRACTION_STATUS = f"""
+ALTER TABLE {TABLE_MAILS}
+ADD COLUMN IF NOT EXISTS extraction_status TEXT NOT NULL DEFAULT 'pending';
+"""
+
+SQL_ALTER_MAILS_ADD_EXTRACTION_ERROR = f"""
+ALTER TABLE {TABLE_MAILS}
+ADD COLUMN IF NOT EXISTS extraction_error TEXT NOT NULL DEFAULT '';
+"""
+
+SQL_ALTER_MAILS_ADD_EXTRACTION_ATTEMPTS = f"""
+ALTER TABLE {TABLE_MAILS}
+ADD COLUMN IF NOT EXISTS extraction_attempts INTEGER NOT NULL DEFAULT 0;
+"""
+
+SQL_ALTER_MAILS_ADD_EXTRACTED_AT = f"""
+ALTER TABLE {TABLE_MAILS}
+ADD COLUMN IF NOT EXISTS extracted_at TIMESTAMPTZ;
+"""
+
 SQL_INSERT_ATTACHMENT = f"""
 INSERT INTO {TABLE_ATTACHMENTS} (
   id, mail_id, filename, content_type, content_id, disposition, size_bytes, file_path
@@ -81,10 +117,14 @@ ON CONFLICT (id) DO NOTHING;
 SQL_INSERT_MAIL = f"""
 INSERT INTO {TABLE_MAILS} (
   id, message_id, mail_from, rcpt_to, subject,
-  date_header, received_at, headers_json, raw_text
+  date_header, received_at, headers_json, raw_text,
+  verification_code, activation_url, extraction_status,
+  extraction_error, extraction_attempts, extracted_at
 ) VALUES (
   %(id)s, %(message_id)s, %(mail_from)s, %(rcpt_to)s, %(subject)s,
-  %(date_header)s, %(received_at)s, %(headers_json)s::jsonb, %(raw_text)s
+  %(date_header)s, %(received_at)s, %(headers_json)s::jsonb, %(raw_text)s,
+  %(verification_code)s, %(activation_url)s, %(extraction_status)s,
+  %(extraction_error)s, %(extraction_attempts)s, %(extracted_at)s
 )
 ON CONFLICT (message_id, rcpt_to) DO UPDATE SET
   mail_from = EXCLUDED.mail_from,
@@ -94,4 +134,24 @@ ON CONFLICT (message_id, rcpt_to) DO UPDATE SET
   headers_json = EXCLUDED.headers_json,
   raw_text = EXCLUDED.raw_text
 RETURNING id;
+"""
+
+SQL_UPDATE_MAIL_EXTRACTION_RESULT = f"""
+UPDATE {TABLE_MAILS}
+SET verification_code = %s,
+    activation_url = %s,
+    extraction_status = %s,
+    extraction_error = %s,
+    extraction_attempts = %s,
+    extracted_at = NOW()
+WHERE id = %s;
+"""
+
+SQL_MARK_MAIL_EXTRACTION_PENDING = f"""
+UPDATE {TABLE_MAILS}
+SET extraction_status = 'pending',
+    extraction_error = '',
+    extraction_attempts = 0,
+    extracted_at = NULL
+WHERE id = %s;
 """

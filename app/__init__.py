@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager, suppress
 from typing import Any
 
@@ -16,6 +17,9 @@ from app.routes.internal import router as internal_router
 from app.routes.mails import router as mails_router
 from app.routes.pages import router as pages_router
 from app.services.cleanup import load_auto_cleanup_state, replace_auto_cleanup_task
+
+
+logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager

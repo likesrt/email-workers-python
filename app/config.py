@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-
 # 数据库表名常量。
 TABLE_MAILS = "received_mails"
 TABLE_AUTO_CLEANUP = "auto_cleanup_settings"
@@ -24,7 +23,15 @@ AUTO_CLEANUP_DEFAULT_BEFORE_MINUTES = 10
 
 
 def _parse_env_line(line: str) -> tuple[str, str] | None:
-    """解析单行 .env 配置并忽略空行、注释与非法内容。"""
+    """
+    解析单行 .env 配置并忽略空行、注释与非法内容。
+
+    Args:
+        line: .env 文件中的原始单行文本
+
+    Returns:
+        成功时返回键值对，忽略时返回 None
+    """
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
         return None
@@ -37,7 +44,12 @@ def _parse_env_line(line: str) -> tuple[str, str] | None:
 
 
 def _load_dotenv_if_exists() -> None:
-    """在项目根目录存在 .env 时补充加载未显式设置的环境变量。"""
+    """
+    在项目根目录存在 .env 时补充加载未显式设置的环境变量。
+
+    Returns:
+        None
+    """
     env_path = Path(__file__).resolve().parent.parent / ".env"
     if not env_path.is_file():
         return
@@ -55,7 +67,6 @@ _load_dotenv_if_exists()
 # 运行所需环境变量：统一 API Token 与 PostgreSQL 连接串。
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
-# 附件存储根目录，默认 ./attachments，可通过环境变量覆盖。
 ATTACHMENTS_DIR = os.path.abspath(os.getenv("ATTACHMENTS_DIR", "./attachments"))
 
 # AI 识别配置（可选）。
@@ -65,10 +76,19 @@ AI_BASE_URL = os.getenv("AI_BASE_URL", "").strip()
 AI_API_KEY = os.getenv("AI_API_KEY", "").strip()
 AI_MODEL = os.getenv("AI_MODEL", "gpt-4").strip()
 AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "10"))
+AI_RETRY_TIMES = int(os.getenv("AI_RETRY_TIMES", "2"))
 
 
 def ensure_settings() -> None:
-    """校验服务运行所需的关键环境变量是否已配置。"""
+    """
+    校验服务运行所需的关键环境变量是否已配置。
+
+    Returns:
+        None
+
+    Raises:
+        RuntimeError: 关键环境变量缺失时抛出
+    """
     for name, value in (("DATABASE_URL", DATABASE_URL), ("API_TOKEN", API_TOKEN)):
         if not value:
             raise RuntimeError(f"Missing required environment variable: {name}")
