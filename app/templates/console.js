@@ -26,7 +26,10 @@
       const resetFiltersBtn = document.getElementById("resetFiltersBtn");
       const prevPageBtn = document.getElementById("prevPageBtn");
       const nextPageBtn = document.getElementById("nextPageBtn");
+      const prevPageBtnTop = document.getElementById("prevPageBtnTop");
+      const nextPageBtnTop = document.getElementById("nextPageBtnTop");
       const paginationInfo = document.getElementById("paginationInfo");
+      const paginationInfoTop = document.getElementById("paginationInfoTop");
       const authStatus = document.getElementById("authStatus");
       const actionStatus = document.getElementById("actionStatus");
       const mailTableBody = document.getElementById("mailTableBody");
@@ -39,7 +42,26 @@
       const detailRaw = document.getElementById("detailRaw");
       const closeDetailBtn = document.getElementById("closeDetailBtn");
       const closeDetailBtn2 = document.getElementById("closeDetailBtn2");
+      const STORAGE_AUTO_REFRESH_KEY = "mail_worker_auto_refresh_on";
+      const toggleFiltersBtn = document.getElementById("toggleFiltersBtn");
+      const filterDetails = document.getElementById("filterDetails");
       const state = { page: 1, pageSize: 20, total: 0, totalPages: 0, lastItems: [], autoRefreshTimer: 0, autoRefreshCountdownTimer: 0, autoRefreshRemainingSeconds: 0, autoCleanupCountdownTimer: 0, autoCleanupRemainingSeconds: 0, isAutoRefreshOn: true, isAutoCleanupOn: false, isLoadingMails: false, isCleaningUp: false, autoCleanupConfiguredMinutes: 10, autoCleanupLastRunAt: "", autoCleanupLastDeletedCount: 0, detailBlobUrls: [] };
+
+      function loadAutoRefreshState() {
+        const saved = getSavedValue(STORAGE_AUTO_REFRESH_KEY, null);
+        if (saved !== null) state.isAutoRefreshOn = saved === "1";
+      }
+
+      function saveAutoRefreshState() {
+        saveValue(STORAGE_AUTO_REFRESH_KEY, state.isAutoRefreshOn ? "1" : "0");
+      }
+
+      loadAutoRefreshState();
+
+      toggleFiltersBtn.addEventListener("click", function () {
+        filterDetails.hidden = !filterDetails.hidden;
+        toggleFiltersBtn.textContent = filterDetails.hidden ? "更多筛选" : "收起筛选";
+      });
 
       function releaseDetailBlobUrls() {
         state.detailBlobUrls.forEach(function (url) {
@@ -70,7 +92,7 @@
       }
 
       function updateAutoRefreshButton() {
-        toggleAutoRefreshBtn.textContent = state.isAutoRefreshOn ? "停止自动查询" : "开启自动查询";
+        toggleAutoRefreshBtn.textContent = state.isAutoRefreshOn ? "停止自动刷新" : "开启自动刷新";
       }
 
       function updateAutoCleanupButton() {
@@ -79,11 +101,11 @@
 
       function updateAutoRefreshStatus() {
         if (!state.isAutoRefreshOn) {
-          autoRefreshStatus.textContent = "自动查询：已停止";
+          autoRefreshStatus.textContent = "自动刷新：已停止";
           autoRefreshCell.dataset.active = "0";
           return;
         }
-        autoRefreshStatus.textContent = "自动查询：" + state.autoRefreshRemainingSeconds + "s";
+        autoRefreshStatus.textContent = "自动刷新：" + state.autoRefreshRemainingSeconds + "s";
         autoRefreshCell.dataset.active = "1";
       }
 
@@ -393,6 +415,7 @@
         return [
           '<!DOCTYPE html><html><head><meta charset="UTF-8">',
           '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+          '<base target="_blank">',
           '<style>html,body{margin:0;padding:0;background:#fff;color:#111827;font-family:Arial,"PingFang SC","Microsoft YaHei",sans-serif;}body{padding:16px;line-height:1.6;}img{max-width:100%;height:auto;}table{max-width:100%;border-collapse:collapse;}pre{white-space:pre-wrap;word-break:break-word;}a{color:#2563eb;}</style>',
           '</head><body>',
           cleanHtml,
@@ -466,17 +489,16 @@
 
       function renderTable(items) {
         if (!Array.isArray(items) || items.length === 0) {
-          mailTableBody.innerHTML = '<tr><td colspan="6" class="empty">没有符合条件的邮件</td></tr>';
+          mailTableBody.innerHTML = '<tr><td colspan="5" class="empty">没有符合条件的邮件</td></tr>';
           return;
         }
         const rows = items.map(function (item) {
           return [
             '<tr>',
             '<td class="col-time">', escapeHtml(formatDateTimeDisplay(item.receivedAt)), '</td>',
-            '<td class="col-to">', escapeHtml(item.to || ""), '</td>',
+            renderCopyCell(item.to, 'col-to'),
             renderCopyCell(item.from, 'col-from'),
             renderCopyCell(item.subject, 'col-subject'),
-            renderCopyCell(item.messageId, 'col-message-id'),
             '<td class="col-actions"><button class="secondary detail-btn" type="button" data-id="', escapeHtml(item.id || ""), '">查看详情</button></td>',
             '</tr>'
           ].join("");
@@ -485,9 +507,15 @@
       }
 
       function updatePaginationInfo() {
-        paginationInfo.textContent = "第 " + state.page + " / " + (state.totalPages || 1) + " 页，共 " + state.total + " 封";
-        prevPageBtn.disabled = state.page <= 1;
-        nextPageBtn.disabled = state.totalPages === 0 || state.page >= state.totalPages;
+        const info = "第 " + state.page + " / " + (state.totalPages || 1) + " 页，共 " + state.total + " 封";
+        const prevDisabled = state.page <= 1;
+        const nextDisabled = state.totalPages === 0 || state.page >= state.totalPages;
+        paginationInfo.textContent = info;
+        paginationInfoTop.textContent = info;
+        prevPageBtn.disabled = prevDisabled;
+        nextPageBtn.disabled = nextDisabled;
+        prevPageBtnTop.disabled = prevDisabled;
+        nextPageBtnTop.disabled = nextDisabled;
       }
 
       function getCurrentQueryParams(pageOverride) {
@@ -711,26 +739,27 @@
       });
       toggleAutoRefreshBtn.addEventListener("click", function () {
         state.isAutoRefreshOn = !state.isAutoRefreshOn;
+        saveAutoRefreshState();
         syncAutoRefresh();
-        setActionStatus(state.isAutoRefreshOn ? "自动查询已开启。" : "自动查询已停止。", "info");
+        setActionStatus(state.isAutoRefreshOn ? "自动刷新已开启。" : "自动刷新已停止。", "info");
       });
       autoRefreshSecondsInput.addEventListener("change", function () {
         const seconds = getAutoRefreshSeconds();
         autoRefreshSecondsInput.value = String(seconds);
         saveValue(STORAGE_AUTO_REFRESH_SECONDS_KEY, autoRefreshSecondsInput.value);
         syncAutoRefresh();
-        setActionStatus("自动查询间隔已更新为 " + seconds + " 秒。", "info");
+        setActionStatus("自动刷新间隔已更新为 " + seconds + " 秒。", "info");
       });
       resetFiltersBtn.addEventListener("click", function () {
         resetFilters();
         setActionStatus("筛选条件已重置。", "info");
       });
-      prevPageBtn.addEventListener("click", function () {
-        if (state.page > 1) loadMails(state.page - 1);
-      });
-      nextPageBtn.addEventListener("click", function () {
-        if (state.totalPages > 0 && state.page < state.totalPages) loadMails(state.page + 1);
-      });
+      function goToPrevPage() { if (state.page > 1) loadMails(state.page - 1); }
+      function goToNextPage() { if (state.totalPages > 0 && state.page < state.totalPages) loadMails(state.page + 1); }
+      prevPageBtn.addEventListener("click", goToPrevPage);
+      nextPageBtn.addEventListener("click", goToNextPage);
+      prevPageBtnTop.addEventListener("click", goToPrevPage);
+      nextPageBtnTop.addEventListener("click", goToNextPage);
       mailTableBody.addEventListener("click", function (event) {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
