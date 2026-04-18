@@ -159,7 +159,7 @@ SQL_MARK_MAIL_EXTRACTION_PENDING = f"""
 UPDATE {TABLE_MAILS}
 SET extraction_status = 'pending',
     extraction_error = '',
-    extraction_attempts = 0,
+    extraction_attempts = 1,
     extracted_at = NULL
 WHERE id = %s;
 """

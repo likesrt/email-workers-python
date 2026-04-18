@@ -14,7 +14,7 @@ RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 
 def extract_with_ai(
     subject: str, body_text: str, config: dict[str, Any]
-) -> dict[str, str | None]:
+) -> dict[str, Any]:
     """
     使用 AI 接口提取验证码和激活 URL。
 
@@ -26,7 +26,7 @@ def extract_with_ai(
         config: AI 配置，包含 base_url、api_key、model、provider、timeout、retry_times
 
     Returns:
-        包含 code 和 url 的字典，失败时字段为 None
+        包含 code、url 和原始响应文本的字典，失败时字段为 None 或空串
     """
     provider = config.get("provider", "openai").lower()
     timeout = int(config.get("timeout", 10))
@@ -52,7 +52,7 @@ def extract_with_ai(
         )
     except Exception as exc:
         logger.warning("AI 识别在重试后仍失败：%s", _format_ai_error(exc))
-        return {"code": None, "url": None}
+        return {"code": None, "url": None, "rawResponse": ""}
 
 
 def _extract_with_retries(
@@ -99,7 +99,7 @@ def _extract_with_retries(
 
 def _extract_with_openai(
     subject: str, body_text: str, config: dict[str, Any], timeout: int
-) -> dict[str, str | None]:
+) -> dict[str, Any]:
     """
     使用 OpenAI 兼容接口提取验证码和 URL。
 
@@ -114,7 +114,7 @@ def _extract_with_openai(
     """
     base_url = config.get("base_url", "")
     api_key = config.get("api_key", "")
-    model = config.get("model", "gpt-4")
+    model = config.get("model", "gpt-5")
     url = f"{base_url.rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
@@ -136,9 +136,32 @@ def _extract_with_openai(
     response = httpx.post(url, json=payload, headers=headers, timeout=timeout)
     response.raise_for_status()
     data = response.json()
-    content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
-    result = json.loads(content)
-    return {"code": result.get("code"), "url": result.get("url")}
+    content = data.get("choices", [{}])[0].get("message", {}).get("content") or ""
+    result = _parse_ai_json_content(content)
+    return {
+        "code": result.get("code"),
+        "url": result.get("url"),
+        "rawResponse": content,
+    }
+
+
+def _parse_ai_json_content(content: str) -> dict[str, Any]:
+    """
+    解析 AI 返回的 JSON 文本，空串或非法 JSON 时返回空结果。
+
+    Args:
+        content: AI 返回的原始文本内容
+
+    Returns:
+        解析后的字典，失败时返回空字典
+    """
+    if not content:
+        return {}
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _format_ai_error(exc: Exception) -> str:
@@ -178,7 +201,7 @@ def _truncate_error_body(text: str) -> str:
 
 def _extract_with_anthropic(
     subject: str, body_text: str, config: dict[str, Any], timeout: int
-) -> dict[str, str | None]:
+) -> dict[str, Any]:
     """
     使用 Anthropic 接口提取验证码和 URL。
 
@@ -215,9 +238,13 @@ def _extract_with_anthropic(
     response = httpx.post(url, json=payload, headers=headers, timeout=timeout)
     response.raise_for_status()
     data = response.json()
-    content = data.get("content", [{}])[0].get("text", "{}")
-    result = json.loads(content)
-    return {"code": result.get("code"), "url": result.get("url")}
+    content = data.get("content", [{}])[0].get("text") or ""
+    result = _parse_ai_json_content(content)
+    return {
+        "code": result.get("code"),
+        "url": result.get("url"),
+        "rawResponse": content,
+    }
 
 
 def _is_retryable_error(exc: Exception) -> bool:

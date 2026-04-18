@@ -11,9 +11,10 @@
   <div class="app-shell">
     <div class="container">
       <header class="app-header">
-        <div>
-          <div class="app-caption">Email Workers</div>
-          <h1>邮件控制台</h1>
+        <div class="hero-copy">
+          <div class="app-caption">Mail Garden Console</div>
+          <h1>邮件收件台</h1>
+          <p class="hero-note">布局回到稳定的单栏工作台，先查时间和来源，再看主题、验证码和状态。</p>
         </div>
         <div class="header-links">
           <a class="btn btn-secondary" href="/docs">API 文档</a>
@@ -21,67 +22,91 @@
         </div>
       </header>
 
-      <section class="panel filter-panel">
-        <div class="panel-head">
-          <strong>访问与筛选</strong>
-          <span class="panel-note">数据优先 · 高密度视图</span>
+      <section class="panel control-panel">
+        <div class="control-grid">
+          <div class="control-card auth-card-block">
+            <div class="panel-head compact-head">
+              <strong>访问设置</strong>
+              <span class="panel-note">本地保存</span>
+            </div>
+            <div class="field">
+              <label for="tokenInput">API Token</label>
+              <input id="tokenInput" type="password" placeholder="请输入 API_TOKEN" autocomplete="off" />
+            </div>
+            <div class="button-row">
+              <button id="saveTokenBtn" class="btn btn-primary" type="button">保存 Token</button>
+              <button id="verifyTokenBtn" class="btn btn-secondary" type="button">验证 Token</button>
+              <button id="clearTokenBtn" class="btn btn-secondary" type="button">清空 Token</button>
+            </div>
+            <div class="status-box auth-box">
+              <span class="status-label status-label-muted">认证状态</span>
+              <div id="authStatus" class="text-note" data-kind="info">请先输入并保存 API_TOKEN，再进行查询。</div>
+            </div>
+          </div>
+
+          <div class="control-card filters-card">
+            <div class="panel-head compact-head">
+              <strong>筛选条件</strong>
+              <button id="resetFiltersBtn" class="btn btn-secondary" type="button">重置筛选</button>
+            </div>
+            <div class="filter-grid">
+              <div class="field field-wide">
+                <label for="rcptToInput">收件邮箱</label>
+                <input id="rcptToInput" type="text" placeholder="留空表示查看全部，例如 yuyan@anyu.297589.best" />
+              </div>
+              <div class="field">
+                <label for="afterInput">开始时间</label>
+                <input id="afterInput" type="datetime-local" />
+              </div>
+              <div class="field">
+                <label for="beforeInput">结束时间</label>
+                <input id="beforeInput" type="datetime-local" />
+              </div>
+              <div class="field">
+                <label for="pageSizeSelect">每页条数</label>
+                <select id="pageSizeSelect">
+                  <option value="10">10</option>
+                  <option value="20" selected>20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
+            </div>
+            <div class="button-row action-row">
+              <button id="searchBtn" class="btn btn-primary" type="button">查询邮件</button>
+              <span id="paginationInfo" class="meta-chip">等待查询</span>
+              <button id="prevPageBtn" class="btn btn-secondary" type="button">上一页</button>
+              <button id="nextPageBtn" class="btn btn-secondary" type="button">下一页</button>
+            </div>
+          </div>
+
+          <div class="control-card maintenance-card">
+            <div class="panel-head compact-head">
+              <strong>维护操作</strong>
+              <span class="panel-note">自动与清理</span>
+            </div>
+            <div class="maintenance-grid">
+              <div class="field">
+                <label for="manualCleanupMinutesInput">手动清理阈值(分钟)</label>
+                <input id="manualCleanupMinutesInput" type="number" min="1" value="10" />
+              </div>
+              <div class="field">
+                <label for="autoCleanupMinutesInput">系统自动清理间隔(分钟)</label>
+                <input id="autoCleanupMinutesInput" type="number" min="1" value="10" />
+              </div>
+              <div class="field">
+                <label for="autoRefreshSecondsInput">自动查询间隔(秒)</label>
+                <input id="autoRefreshSecondsInput" type="number" min="1" value="3" />
+              </div>
+            </div>
+            <div class="button-row">
+              <button id="toggleAutoRefreshBtn" class="btn btn-secondary" type="button">停止自动查询</button>
+              <button id="toggleAutoCleanupBtn" class="btn btn-secondary" type="button">开启系统自动清理</button>
+              <button id="cleanupBtn" class="btn btn-danger" type="button">手动清理历史邮件</button>
+            </div>
+          </div>
         </div>
-        <div class="token-row">
-          <div class="field token-field">
-            <label for="tokenInput">API Token</label>
-            <input id="tokenInput" type="password" placeholder="请输入 API_TOKEN" autocomplete="off" />
-          </div>
-          <div class="inline-actions">
-            <button id="saveTokenBtn" class="btn btn-primary" type="button">保存</button>
-            <button id="verifyTokenBtn" class="btn btn-secondary" type="button">验证</button>
-            <button id="clearTokenBtn" class="btn btn-secondary" type="button">清空</button>
-          </div>
-        </div>
-        <div class="auth-row">
-          <div id="authStatus" class="text-note" data-kind="info">请先输入并保存 API_TOKEN，再进行查询。</div>
-        </div>
-        <div class="filter-grid">
-          <div class="field field-wide">
-            <label for="rcptToInput">收件邮箱</label>
-            <input id="rcptToInput" type="text" placeholder="留空表示查看全部，例如 yuyan@anyu.297589.best" />
-          </div>
-          <div class="field">
-            <label for="afterInput">开始时间</label>
-            <input id="afterInput" type="datetime-local" />
-          </div>
-          <div class="field">
-            <label for="beforeInput">结束时间</label>
-            <input id="beforeInput" type="datetime-local" />
-          </div>
-          <div class="field">
-            <label for="pageSizeSelect">每页条数</label>
-            <select id="pageSizeSelect">
-              <option value="10">10</option>
-              <option value="20" selected>20</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="manualCleanupMinutesInput">手动清理(分钟)</label>
-            <input id="manualCleanupMinutesInput" type="number" min="1" value="10" />
-          </div>
-          <div class="field">
-            <label for="autoCleanupMinutesInput">自动清理(分钟)</label>
-            <input id="autoCleanupMinutesInput" type="number" min="1" value="10" />
-          </div>
-          <div class="field">
-            <label for="autoRefreshSecondsInput">自动查询(秒)</label>
-            <input id="autoRefreshSecondsInput" type="number" min="1" value="3" />
-          </div>
-        </div>
-        <div class="toolbar-row">
-          <button id="searchBtn" class="btn btn-primary" type="button">查询邮件</button>
-          <button id="toggleAutoRefreshBtn" class="btn btn-secondary" type="button">停止自动查询</button>
-          <button id="toggleAutoCleanupBtn" class="btn btn-secondary" type="button">开启系统自动清理</button>
-          <button id="cleanupBtn" class="btn btn-danger" type="button">手动清理历史邮件</button>
-          <button id="resetFiltersBtn" class="btn btn-secondary" type="button">重置筛选</button>
-        </div>
+
         <div class="status-grid" id="statusBar">
           <div class="status-card" id="actionCell" data-kind="info">
             <span class="status-label status-label-muted">操作状态</span>
@@ -99,15 +124,10 @@
       </section>
 
       <section class="panel table-panel">
-        <div class="panel-head table-head">
+        <div class="panel-head compact-head table-header-row">
           <div>
             <strong>邮件列表</strong>
-            <div class="table-note">重试后只轮询当前邮件，不刷新整页。</div>
-          </div>
-          <div class="pagination-bar">
-            <button id="prevPageBtn" class="btn btn-secondary" type="button">上一页</button>
-            <button id="nextPageBtn" class="btn btn-secondary" type="button">下一页</button>
-            <span id="paginationInfo" class="meta-chip">等待查询</span>
+            <div class="table-note">列顺序：收到时间 → 发件邮箱 → 收件邮箱 → 主题 → 验证码 → 激活链接 → 状态 → 操作</div>
           </div>
         </div>
         <div class="table-wrap">
@@ -115,18 +135,17 @@
             <thead>
               <tr>
                 <th class="col-time">收到时间</th>
-                <th class="col-to">收件邮箱</th>
                 <th class="col-from">发件邮箱</th>
+                <th class="col-to">收件邮箱</th>
                 <th class="col-subject">主题</th>
                 <th class="col-code">验证码</th>
-                <th class="col-status">识别状态</th>
                 <th class="col-url">激活链接</th>
-                <th class="col-message-id">Message-ID</th>
+                <th class="col-status">识别状态</th>
                 <th class="col-actions">操作</th>
               </tr>
             </thead>
             <tbody id="mailTableBody">
-              <tr><td colspan="9" class="empty">暂无数据</td></tr>
+              <tr><td colspan="8" class="empty">暂无数据</td></tr>
             </tbody>
           </table>
         </div>
@@ -139,7 +158,7 @@
       <div class="modal-top">
         <div>
           <h2 id="detailTitle">邮件详情</h2>
-          <div class="table-note">HTML 正文会经过 DOMPurify 清洗后在 iframe 中渲染。</div>
+          <div class="table-note">优先展示正文、识别结果和附件信息。</div>
         </div>
         <button id="closeDetailBtn" class="btn btn-secondary" type="button">关闭</button>
       </div>

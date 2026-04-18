@@ -258,9 +258,13 @@ def _sanitize_code_candidate(text: str, candidate: Any) -> str | None:
         合法验证码或 None
     """
     code = _normalize_code(str(candidate or ""))
-    if not code or not _has_verification_context(text):
+    if not code:
         return None
-    if not _is_candidate_code(code) or not _text_contains_code(text, code):
+    if not _is_candidate_code(code):
+        return None
+    if not _text_contains_code(text, code):
+        return None
+    if not _has_verification_context(text):
         return None
     return code
 

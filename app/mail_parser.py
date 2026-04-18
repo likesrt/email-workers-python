@@ -58,9 +58,27 @@ def _decode_payload_content(part: Any) -> str:
 
 def extract_mail_bodies(raw_text: str) -> dict[str, str]:
     """从原始邮件中提取文本与 HTML 正文。"""
+    import logging
+    logger = logging.getLogger(__name__)
+
     message = parse_raw_message(raw_text)
-    parts = message.walk() if message.is_multipart() else [message]
-    return _collect_mail_bodies(parts)
+    is_multi = message.is_multipart()
+    parts = list(message.walk()) if is_multi else [message]
+
+    logger.info(
+        "邮件解析。is_multipart=%s parts_count=%d content_type=%s",
+        is_multi,
+        len(parts),
+        message.get_content_type(),
+    )
+
+    result = _collect_mail_bodies(parts)
+    logger.info(
+        "邮件正文提取完成。text_length=%d html_length=%d",
+        len(result.get("textBody", "")),
+        len(result.get("htmlBody", "")),
+    )
+    return result
 
 
 def _collect_mail_bodies(parts: Any) -> dict[str, str]:
@@ -81,8 +99,21 @@ def _skip_body_part(part: Any) -> bool:
 
 def _merge_body_part(part: Any, text_body: str, html_body: str) -> tuple[str, str]:
     """将单个分片内容合并到正文结果中。"""
+    import logging
+    logger = logging.getLogger(__name__)
+
     content = get_message_part_content(part).strip()
     content_type = (part.get_content_type() or "").lower()
+
+    if content_type in ("text/plain", "text/html"):
+        logger.info(
+            "提取邮件分片。type=%s length=%d encoding=%s preview=%s",
+            content_type,
+            len(content),
+            part.get("Content-Transfer-Encoding", ""),
+            content[:100] if content else "<empty>",
+        )
+
     if content_type == "text/plain" and content and not text_body:
         text_body = content
     if content_type == "text/html" and content and not html_body:

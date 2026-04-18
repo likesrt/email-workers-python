@@ -461,9 +461,17 @@
     ].join("");
   }
 
+  /**
+   * 渲染支持复制与截断的表格单元格。
+   *
+   * @param {string} value 单元格原始文本。
+   * @param {string} className 单元格列样式类名。
+   * @returns {string} 表格单元格 HTML。
+   * @description 时间列与验证码列使用等宽字体，其余长文本保留 tooltip 与点击复制能力。
+   */
   function renderCopyCell(value, className) {
     const text = String(value || "");
-    const monoClass = ["col-time", "col-code", "col-message-id"].includes(className) ? " font-mono" : "";
+    const monoClass = ["col-time", "col-code"].includes(className) ? " font-mono" : "";
     return [
       '<td class="copy-cell ',
       className,
@@ -544,9 +552,16 @@
     renderTable(state.lastItems);
   }
 
+  /**
+   * 渲染邮件列表表格。
+   *
+   * @param {Array<object>} items 邮件摘要列表。
+   * @returns {void} 直接更新表格 tbody。
+   * @description 保持表头与行内容一致为 8 列，并让长文本统一走可截断的复制单元格。
+   */
   function renderTable(items) {
     if (!Array.isArray(items) || items.length === 0) {
-      mailTableBody.innerHTML = '<tr><td colspan="9" class="empty">没有符合条件的邮件</td></tr>';
+      mailTableBody.innerHTML = '<tr><td colspan="8" class="empty">没有符合条件的邮件</td></tr>';
       return;
     }
     const rows = items.map(function (item) {
@@ -558,14 +573,13 @@
         : '<td class="col-url"><span class="small">-</span></td>';
       return [
         '<tr data-mail-id="', escapeHtml(item.id || ""), '">',
-        '<td class="col-time font-mono">', escapeHtml(formatDateTimeDisplay(item.receivedAt)), '</td>',
-        '<td class="col-to">', escapeHtml(item.to || ""), '</td>',
+        renderCopyCell(formatDateTimeDisplay(item.receivedAt), "col-time"),
         renderCopyCell(item.from, "col-from"),
+        renderCopyCell(item.to, "col-to"),
         renderCopyCell(item.subject, "col-subject"),
         codeCell,
-        renderExtractionStatusCell(item),
         urlCell,
-        renderCopyCell(item.messageId, "col-message-id"),
+        renderExtractionStatusCell(item),
         renderActionCell(item),
         '</tr>'
       ].join("");

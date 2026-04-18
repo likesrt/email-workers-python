@@ -70,17 +70,14 @@ def handle_retry_mail_extraction(
 ) -> dict[str, object]:
     """按邮件 ID 重新执行验证码与激活链接识别。"""
     require_api_token(request)
-    mail = get_mail_by_id(mail_id)
-    if not mail:
-        raise HTTPException(status_code=404, detail="Mail not found.")
-    item = retry_mail_extraction(mail_id)
+    summary, mail = retry_mail_extraction(mail_id)
     background_tasks.add_task(
         run_mail_extraction_job,
         mail_id,
         str(mail["subject"]),
         str(mail.get("raw_text") or ""),
     )
-    return item
+    return summary
 
 
 @router.get("/api/mail/{email}")

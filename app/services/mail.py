@@ -181,10 +181,13 @@ def _normalize_extraction_status(row: dict[str, Any]) -> str:
     status = str(row.get("extraction_status") or "idle")
     if status != "pending":
         return status
-    # 旧数据加列后会继承 pending 默认值，这里改成 idle 避免历史邮件被误判为识别中。
-    if row.get("extracted_at") or int(row.get("extraction_attempts") or 0) > 0:
+    extracted_at = row.get("extracted_at")
+    attempts = int(row.get("extraction_attempts") or 0)
+    if extracted_at:
         return status
-    return "idle"
+    if attempts == 0:
+        return "idle"
+    return status
 
 
 def count_mails(filters: MailListFilters) -> int:
@@ -423,27 +426,37 @@ def get_mail_summary_by_id(mail_id: str) -> dict[str, Any] | None:
     return map_mail_summary(mail) if mail else None
 
 
-def retry_mail_extraction(mail_id: str) -> dict[str, Any]:
+def retry_mail_extraction(mail_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
     """
-    重置指定邮件的识别状态并返回当前摘要。
+    重置指定邮件的识别状态并返回摘要和完整邮件。
 
     Args:
         mail_id: 邮件主键 ID
 
     Returns:
-        已重置为待识别状态的邮件摘要
+        (邮件摘要, 完整邮件) 元组
 
     Raises:
         HTTPException: 邮件不存在时抛出 404
     """
-    mail = get_mail_by_id(mail_id)
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(SQL_MARK_MAIL_EXTRACTION_PENDING, [mail_id])
+            cur.execute(
+                f"""
+                SELECT id, message_id, mail_from, rcpt_to, subject, date_header,
+                       received_at, headers_json, raw_text, verification_code,
+                       activation_url, extraction_status, extraction_error,
+                       extraction_attempts, extracted_at
+                FROM {TABLE_MAILS} WHERE id = %s LIMIT 1;
+                """,
+                [mail_id],
+            )
+            mail = cur.fetchone()
+        conn.commit()
     if not mail:
         raise HTTPException(status_code=404, detail="Mail not found.")
-    _mark_mail_extraction_pending_by_id(mail_id)
-    refreshed = get_mail_summary_by_id(mail_id)
-    if not refreshed:
-        raise HTTPException(status_code=404, detail="Mail not found.")
-    return refreshed
+    return map_mail_summary(mail), mail
 
 
 def _mark_mail_extraction_pending_by_id(mail_id: str) -> None:
@@ -521,11 +534,24 @@ def _extract_code_and_url_with_fallback(
                 "timeout": AI_TIMEOUT,
                 "retry_times": AI_RETRY_TIMES,
             }
-            logger.info("开始 AI 识别。mail_id=%s provider=%s", mail_id, AI_PROVIDER)
+            logger.info(
+                "开始 AI 识别。mail_id=%s provider=%s body_length=%d",
+                mail_id,
+                AI_PROVIDER,
+                len(body_text),
+            )
+            if not body_text or len(body_text) < 50:
+                logger.warning(
+                    "AI 输入正文过短或为空。mail_id=%s body_length=%d body_preview=%s",
+                    mail_id,
+                    len(body_text),
+                    body_text[:300] if body_text else "<empty>",
+                )
             result = extract_with_ai(subject, body_text, config)
             logger.info(
-                "AI 原始返回。mail_id=%s code=%r url=%r",
+                "AI 原始返回。mail_id=%s 原始文本=%s code=%r url=%r",
                 mail_id,
+                _summarize_ai_raw_response(result.get("rawResponse")),
                 result.get("code"),
                 result.get("url"),
             )
@@ -539,10 +565,11 @@ def _extract_code_and_url_with_fallback(
                 )
                 return {**sanitized, "attempts": AI_RETRY_TIMES + 1}
             logger.info(
-                "AI 返回结果无效，已被过滤。mail_id=%s 原始=%s 清洗后=%s",
+                "AI 返回结果无效，已被过滤。mail_id=%s 原始=%s 清洗后=%s 原因=%s",
                 mail_id,
                 _summarize_extraction_result(result),
                 _summarize_extraction_result(sanitized),
+                _explain_filter_reason(subject, raw_text, result, sanitized),
             )
         except Exception:
             logger.exception("AI 识别异常，准备回退规则识别。mail_id=%s", mail_id)
@@ -571,6 +598,72 @@ def _summarize_extraction_result(result: dict[str, Any]) -> str:
     return f"code={code or '-'} url={url or '-'}"
 
 
+def _explain_filter_reason(
+    subject: str, raw_text: str, original: dict[str, Any], sanitized: dict[str, Any]
+) -> str:
+    """
+    诊断 AI 返回值被过滤的原因。
+
+    Args:
+        subject: 邮件主题
+        raw_text: 邮件原始文本
+        original: AI 原始返回结果
+        sanitized: 清洗后的结果
+
+    Returns:
+        过滤原因描述
+    """
+    from app.services.code_extractor import (
+        _extract_body_text,
+        _has_verification_context,
+        _is_candidate_code,
+        _normalize_code,
+        _text_contains_code,
+    )
+
+    reasons = []
+    orig_code = original.get("code")
+    orig_url = original.get("url")
+
+    if not orig_code and not orig_url:
+        return "AI未识别出任何内容"
+
+    if orig_code and not sanitized.get("code"):
+        normalized = _normalize_code(str(orig_code))
+        body_text = _extract_body_text(raw_text)
+        full_text = f"{subject}\n{body_text}"
+        if not normalized:
+            reasons.append("code格式化后为空")
+        elif not _is_candidate_code(normalized):
+            reasons.append("code不符合验证码约束")
+        elif not _text_contains_code(full_text, normalized):
+            reasons.append("邮件正文中未找到该code")
+        elif not _has_verification_context(full_text):
+            reasons.append("邮件缺少验证码上下文关键词")
+
+    if orig_url and not sanitized.get("url"):
+        body_text = _extract_body_text(raw_text)
+        search_text = f"{subject}\n{body_text}\n{raw_text}"
+        if str(orig_url).strip() not in search_text:
+            reasons.append("url未在邮件原文中出现")
+
+    return ", ".join(reasons) if reasons else "未知原因"
+
+
+def _summarize_ai_raw_response(raw_response: Any) -> str:
+    """
+    将 AI 原始响应文本压缩后写入日志，便于排查返回格式问题。
+
+    Args:
+        raw_response: AI 接口返回的原始文本内容
+
+    Returns:
+        截断后的原始响应摘要
+    """
+    compact = " ".join(str(raw_response or "").split())
+    return compact[:240] or "<empty>"
+
+
 def _extract_body_for_ai(raw_text: str) -> str:
     """
     从原始邮件中提取正文用于 AI 识别。
@@ -589,7 +682,9 @@ def _extract_body_for_ai(raw_text: str) -> str:
     if html_body:
         import re
 
-        return re.sub(r"<[^>]+>", " ", html_body)
+        clean = re.sub(r"<[^>]+>", " ", html_body)
+        clean = re.sub(r"\s+", " ", clean).strip()
+        return clean
     return ""
 
 
