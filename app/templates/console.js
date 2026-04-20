@@ -70,6 +70,13 @@
       }
       initTheme();
 
+      window.addEventListener("storage", function(event) {
+        if (event.key === STORAGE_THEME_KEY && event.newValue) {
+          document.documentElement.dataset.theme = event.newValue;
+          updateThemeIcon(event.newValue);
+        }
+      });
+
       function loadAutoRefreshState() {
         const saved = getSavedValue(STORAGE_AUTO_REFRESH_KEY, null);
         if (saved !== null) state.isAutoRefreshOn = saved === "1";

@@ -44,6 +44,13 @@
   }
   initTheme();
 
+  window.addEventListener("storage", function(event) {
+    if (event.key === STORAGE_THEME_KEY && event.newValue) {
+      document.documentElement.dataset.theme = event.newValue;
+      updateThemeIcon(event.newValue);
+    }
+  });
+
   function getSavedValue(key, fallback) {
     try { return localStorage.getItem(key) || fallback; }
     catch { return fallback; }
