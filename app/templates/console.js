@@ -407,45 +407,6 @@
         return Number.isNaN(date.getTime()) ? "" : date.toISOString();
       }
 
-      function sanitizeHtml(value) {
-        const dirty = String(value || "");
-        if (window.DOMPurify && typeof window.DOMPurify.sanitize === "function") {
-          return window.DOMPurify.sanitize(dirty, {
-            USE_PROFILES: { html: true },
-            FORBID_TAGS: ["script", "iframe", "object", "embed", "base", "meta"],
-            FORBID_ATTR: ["srcset"],
-            ALLOW_DATA_ATTR: false
-          });
-        }
-        const doc = new DOMParser().parseFromString(dirty, "text/html");
-        doc.querySelectorAll("script,style,iframe,object,embed,link,meta,base").forEach(function (node) {
-          node.remove();
-        });
-        doc.querySelectorAll("*").forEach(function (node) {
-          Array.from(node.attributes).forEach(function (attr) {
-            const name = attr.name.toLowerCase();
-            const value = String(attr.value || "").trim().toLowerCase();
-            if (name.startsWith("on")) node.removeAttribute(attr.name);
-            if (["src", "href", "xlink:href"].includes(name) && value.startsWith("javascript:")) {
-              node.removeAttribute(attr.name);
-            }
-          });
-        });
-        return doc.body ? doc.body.innerHTML : dirty;
-      }
-
-
-
-      function renderCopyCell(value, className) {
-        const text = String(value || "");
-        return [
-          '<td class="',
-          className,
-          '">',
-          escapeHtml(text || "-"),
-          '</td>'
-        ].join("");
-      }
 
       function renderTable(items) {
         if (!Array.isArray(items) || items.length === 0) {
@@ -456,9 +417,9 @@
           return [
             '<tr>',
             '<td class="col-time">', escapeHtml(formatDateTimeDisplay(item.receivedAt)), '</td>',
-            renderCopyCell(item.to, 'col-to'),
-            renderCopyCell(item.from, 'col-from'),
-            renderCopyCell(item.subject, 'col-subject'),
+            '<td class="col-to">', escapeHtml(item.to || "-"), '</td>',
+            '<td class="col-from">', escapeHtml(item.from || "-"), '</td>',
+            '<td class="col-subject">', escapeHtml(item.subject || "-"), '</td>',
             '<td class="col-actions"><button class="secondary detail-btn" type="button" data-id="', escapeHtml(item.id || ""), '">详情</button></td>',
             '</tr>'
           ].join("");

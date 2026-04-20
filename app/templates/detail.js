@@ -37,6 +37,22 @@
     document.documentElement.dataset.theme = next;
     saveValue(STORAGE_THEME_KEY, next);
     updateThemeIcon(next);
+    updateIframeTheme(next);
+  }
+
+  function updateIframeTheme(theme) {
+    const frame = detailBody.querySelector("iframe");
+    if (!frame || !frame.contentDocument) return;
+    const body = frame.contentDocument.body;
+    if (body) {
+      if (theme === "dark") {
+        body.style.backgroundColor = "#12161e";
+        body.style.color = "#e6edf3";
+      } else {
+        body.style.backgroundColor = "#ffffff";
+        body.style.color = "#111827";
+      }
+    }
   }
 
   if (themeToggleBtn) {
@@ -48,6 +64,7 @@
     if (event.key === STORAGE_THEME_KEY && event.newValue) {
       document.documentElement.dataset.theme = event.newValue;
       updateThemeIcon(event.newValue);
+      updateIframeTheme(event.newValue);
     }
   });
 
@@ -206,11 +223,14 @@
 
   function buildHtmlPreviewDocument(value) {
     const cleanHtml = sanitizeHtml(value);
+    const theme = document.documentElement.dataset.theme || "dark";
+    const bg = theme === "dark" ? "#12161e" : "#ffffff";
+    const color = theme === "dark" ? "#e6edf3" : "#111827";
     return [
       '<!DOCTYPE html><html><head><meta charset="UTF-8">',
       '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
       '<base target="_blank">',
-      '<style>html,body{margin:0;padding:0;background:#fff;color:#111827;font-family:Arial,"PingFang SC","Microsoft YaHei",sans-serif;}body{padding:16px;line-height:1.6;}img{max-width:100%;height:auto;}table{max-width:100%;border-collapse:collapse;}pre{white-space:pre-wrap;word-break:break-word;}a{color:#2563eb;}</style>',
+      '<style>html,body{margin:0;padding:0;background:' + bg + ';color:' + color + ';font-family:Arial,"PingFang SC","Microsoft YaHei",sans-serif;transition: background-color 250ms, color 250ms;}body{padding:16px;line-height:1.6;}img{max-width:100%;height:auto;}table{max-width:100%;border-collapse:collapse;}pre{white-space:pre-wrap;word-break:break-word;}a{color:#2563eb;}</style>',
       '</head><body>',
       cleanHtml,
       '</body></html>'
@@ -218,7 +238,7 @@
   }
 
   async function renderHtmlBody(value, attachments) {
-    detailBody.innerHTML = '<iframe class="mail-html-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" style="width: 100%; height: 60vh; border: none; background: white; border-radius: var(--radius);"></iframe>';
+    detailBody.innerHTML = '<iframe class="mail-html-frame" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin" referrerpolicy="no-referrer" style="width: 100%; min-height: 500px; border: none; background: transparent; border-radius: var(--radius-sm);"></iframe>';
     const frame = detailBody.querySelector("iframe");
     if (!(frame instanceof HTMLIFrameElement)) return;
     const cidMap = await buildCidBlobUrlMap(attachments || []);
@@ -232,7 +252,12 @@
   }
 
   function cleanupBodyText(value) {
-    return String(value || "").replace(/\n{3,}/g, "\n\n").trim();
+    let text = String(value || "").replace(/\n{3,}/g, "\n\n").trim();
+    // First escape HTML to prevent XSS
+    text = escapeHtml(text);
+    // Then match URLs and convert to clickable links
+    text = text.replace(/(https?:\/\/[^\s&<]+)/g, '<a href="$1" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">$1</a>');
+    return text;
   }
 
   function renderMetaCard(label, value) {
@@ -311,7 +336,8 @@
     if (data.htmlBody) {
       await renderHtmlBody(data.htmlBody, attachments || []);
     } else {
-      detailBody.textContent = cleanupBodyText(data.textBody || htmlToText(data.raw)) || "没有提取到可读正文。";
+      const htmlContent = cleanupBodyText(data.textBody || htmlToText(data.raw));
+      detailBody.innerHTML = htmlContent ? '<div style="white-space: pre-wrap; font-family: var(--font-sans);">' + htmlContent + '</div>' : "没有提取到可读正文。";
     }
 
     detailHeaders.innerHTML = renderHeaderTable(data.headers);
