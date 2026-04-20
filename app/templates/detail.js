@@ -41,18 +41,7 @@
   }
 
   function updateIframeTheme(theme) {
-    const frame = detailBody.querySelector("iframe");
-    if (!frame || !frame.contentDocument) return;
-    const body = frame.contentDocument.body;
-    if (body) {
-      if (theme === "dark") {
-        body.style.backgroundColor = "#12161e";
-        body.style.color = "#e6edf3";
-      } else {
-        body.style.backgroundColor = "#ffffff";
-        body.style.color = "#111827";
-      }
-    }
+    // 移除iframe内的颜色动态修改，使内部背景始终保留纯白，避免破坏绝大部分邮件排版
   }
 
   if (themeToggleBtn) {
@@ -223,14 +212,11 @@
 
   function buildHtmlPreviewDocument(value) {
     const cleanHtml = sanitizeHtml(value);
-    const theme = document.documentElement.dataset.theme || "dark";
-    const bg = theme === "dark" ? "#12161e" : "#ffffff";
-    const color = theme === "dark" ? "#e6edf3" : "#111827";
     return [
       '<!DOCTYPE html><html><head><meta charset="UTF-8">',
       '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
       '<base target="_blank">',
-      '<style>html,body{margin:0;padding:0;background:' + bg + ';color:' + color + ';font-family:Arial,"PingFang SC","Microsoft YaHei",sans-serif;transition: background-color 250ms, color 250ms;}body{padding:16px;line-height:1.6;}img{max-width:100%;height:auto;}table{max-width:100%;border-collapse:collapse;}pre{white-space:pre-wrap;word-break:break-word;}a{color:#2563eb;}</style>',
+      '<style>html,body{margin:0;padding:0;background:white;color:#111827;font-family:Arial,"PingFang SC","Microsoft YaHei",sans-serif;}body{padding:16px;line-height:1.6;}img{max-width:100%;height:auto;}table{max-width:100%;border-collapse:collapse;}pre{white-space:pre-wrap;word-break:break-word;}a{color:#2563eb;}</style>',
       '</head><body>',
       cleanHtml,
       '</body></html>'
@@ -238,7 +224,7 @@
   }
 
   async function renderHtmlBody(value, attachments) {
-    detailBody.innerHTML = '<iframe class="mail-html-frame" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin" referrerpolicy="no-referrer" style="width: 100%; min-height: 500px; border: none; background: transparent; border-radius: var(--radius-sm);"></iframe>';
+    detailBody.innerHTML = '<iframe class="mail-html-frame" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin" referrerpolicy="no-referrer"></iframe>';
     const frame = detailBody.querySelector("iframe");
     if (!(frame instanceof HTMLIFrameElement)) return;
     const cidMap = await buildCidBlobUrlMap(attachments || []);

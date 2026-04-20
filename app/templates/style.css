@@ -819,12 +819,40 @@ tbody tr:hover td.col-actions {
   border: none;
   border-radius: var(--radius-sm);
   background: white;
-  transition: filter var(--transition-base);
+  transition: opacity var(--transition-base);
 }
 
 /* iframe Dark mode filter trick */
 html[data-theme="dark"] .mail-html-frame {
-  filter: invert(1) hue-rotate(180deg);
+  /* 移除全局反转，避免大部分HTML邮件色彩严重失真，采用基础白色底板呈现邮件原貌 */
+  background: white;
+}
+
+.meta-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  overflow: hidden;
+}
+
+.meta-card strong {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.meta-card span {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .raw-box {
