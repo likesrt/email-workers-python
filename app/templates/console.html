@@ -22,7 +22,6 @@
               <button id="clearTokenBtn" class="ghost" type="button">清空</button>
             </div>
           </div>
-          <div id="authStatus" class="status-bar" data-kind="info">请先输入并保存 API_TOKEN，再进行查询。</div>
         </div>
         <div class="hero-right">
           <div style="display:flex; justify-content: space-between; align-items: flex-start;">
@@ -109,7 +108,7 @@
                   <span class="status-label" id="autoRefreshStatus">自动刷新中 3s</span>
                 </div>
               </div>
-              <div class="section-note">点击"详情"后使用弹窗展示整理后的邮件内容。</div>
+              <div class="section-note">点击邮件后将在新页面展示详细内容。</div>
             </div>
             <div class="section-tag">Inbox View</div>
           </div>
@@ -147,39 +146,6 @@
     </div>
   </div>
 
-  <div id="detailModal" class="modal-backdrop" hidden>
-    <div class="modal">
-      <div class="modal-top">
-        <div>
-          <h2 id="detailTitle">邮件详情</h2>
-          <div class="section-note">优先展示可读正文，HTML 正文会经过 DOMPurify 清洗后在隔离 iframe 中渲染。</div>
-        </div>
-        <button id="closeDetailBtn" class="secondary" type="button">关闭</button>
-      </div>
-      <div class="detail-grid">
-        <div id="detailMeta" class="meta-grid"></div>
-        <div class="detail-card">
-          <strong>正文</strong>
-          <div id="detailBody" class="body-box">暂无详情</div>
-        </div>
-        <div class="detail-card">
-          <strong>附件</strong>
-          <div id="detailAttachments"><div class="small">无附件</div></div>
-        </div>
-        <div class="detail-card">
-          <strong>邮件头</strong>
-          <div id="detailHeaders"></div>
-        </div>
-        <div class="detail-card">
-          <strong>原始内容</strong>
-          <pre id="detailRaw" class="raw-box"></pre>
-        </div>
-        <div class="toolbar">
-          <button id="closeDetailBtn2" class="secondary" type="button">关闭弹窗</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <script>__SCRIPT__</script>
 </body>

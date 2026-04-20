@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>邮件详情 - Email Workers</title>
+  <style>__STYLE__</style>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.3.3/dist/purify.min.js"></script>
+</head>
+<body>
+  <div class="toast-container" id="toastContainer"></div>
+  <div class="page-shell">
+    <div class="wrap">
+      <div style="padding: 1rem 0; display: flex; align-items: center; justify-content: space-between;">
+        <h1 id="detailTitle" style="margin: 0; font-size: 1.5rem; color: var(--text-primary);">邮件详情</h1>
+        <button id="themeToggleBtn" class="ghost" type="button" style="padding: 0.5rem; border-radius: 50%;" title="切换亮/暗模式"></button>
+      </div>
+
+      <div class="detail-grid">
+        <div id="detailMeta" class="meta-grid">加载中...</div>
+        <div class="detail-card">
+          <strong>正文</strong>
+          <div id="detailBody" class="body-box">加载中...</div>
+        </div>
+        <div class="detail-card">
+          <strong>附件</strong>
+          <div id="detailAttachments"><div class="small">加载中...</div></div>
+        </div>
+        <div class="detail-card">
+          <strong>邮件头</strong>
+          <div id="detailHeaders">加载中...</div>
+        </div>
+        <div class="detail-card">
+          <strong>原始内容</strong>
+          <pre id="detailRaw" class="raw-box">加载中...</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>__SCRIPT__</script>
+</body>
+</html>

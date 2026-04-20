@@ -22,6 +22,13 @@ def handle_docs_page() -> HTMLResponse:
     return HTMLResponse(render_docs_page())
 
 
+@router.get("/detail", response_class=HTMLResponse)
+def handle_detail_page() -> HTMLResponse:
+    """返回邮件详情页。"""
+    from app.templates.render import render_detail_page
+    return HTMLResponse(render_detail_page())
+
+
 @router.get("/healthz")
 def handle_health() -> dict[str, bool]:
     """返回服务健康状态。"""

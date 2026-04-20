@@ -2,6 +2,7 @@
       const STORAGE_TOKEN_KEY = "mail_worker_api_token";
       const STORAGE_MANUAL_CLEANUP_MINUTES_KEY = "mail_worker_manual_cleanup_minutes";
       const STORAGE_AUTO_CLEANUP_MINUTES_KEY = "mail_worker_auto_cleanup_minutes";
+      const STORAGE_AUTO_REFRESH_KEY = "mail_worker_auto_refresh_on";
       const STORAGE_AUTO_REFRESH_SECONDS_KEY = "mail_worker_auto_refresh_seconds";
       const tokenInput = document.getElementById("tokenInput");
       const saveTokenBtn = document.getElementById("saveTokenBtn");
@@ -29,22 +30,12 @@
       const nextPageBtnTop = document.getElementById("nextPageBtnTop");
       const paginationInfo = document.getElementById("paginationInfo");
       const paginationInfoTop = document.getElementById("paginationInfoTop");
-      const authStatus = document.getElementById("authStatus");
       const mailTableBody = document.getElementById("mailTableBody");
-      const detailModal = document.getElementById("detailModal");
-      const detailTitle = document.getElementById("detailTitle");
-      const detailMeta = document.getElementById("detailMeta");
-      const detailBody = document.getElementById("detailBody");
-      const detailHeaders = document.getElementById("detailHeaders");
-      const detailAttachments = document.getElementById("detailAttachments");
-      const detailRaw = document.getElementById("detailRaw");
-      const closeDetailBtn = document.getElementById("closeDetailBtn");
-      const closeDetailBtn2 = document.getElementById("closeDetailBtn2");
-      const STORAGE_AUTO_REFRESH_KEY = "mail_worker_auto_refresh_on";
+      const detailBlobUrls = [];
       const toggleFiltersBtn = document.getElementById("toggleFiltersBtn");
       const filterDetails = document.getElementById("filterDetails");
       const themeToggleBtn = document.getElementById("themeToggleBtn");
-      const state = { page: 1, pageSize: 20, total: 0, totalPages: 0, lastItems: [], autoRefreshTimer: 0, autoRefreshCountdownTimer: 0, autoRefreshRemainingSeconds: 0, autoCleanupCountdownTimer: 0, autoCleanupRemainingSeconds: 0, isAutoRefreshOn: true, isAutoCleanupOn: false, isLoadingMails: false, isCleaningUp: false, autoCleanupConfiguredMinutes: 10, autoCleanupLastRunAt: "", autoCleanupLastDeletedCount: 0, detailBlobUrls: [] };
+      const state = { page: 1, pageSize: 20, total: 0, totalPages: 0, lastItems: [], autoRefreshTimer: 0, autoRefreshCountdownTimer: 0, autoRefreshRemainingSeconds: 0, autoCleanupCountdownTimer: 0, autoCleanupRemainingSeconds: 0, isAutoRefreshOn: true, isAutoCleanupOn: false, isLoadingMails: false, isCleaningUp: false, autoCleanupConfiguredMinutes: 10, autoCleanupLastRunAt: "", autoCleanupLastDeletedCount: 0 };
       const STORAGE_THEME_KEY = "mail_worker_theme";
 
       function initTheme() {
@@ -90,18 +81,13 @@
 
       loadAutoRefreshState();
 
-      toggleFiltersBtn.addEventListener("click", function () {
+      function toggleFiltersBtnHandler() {
         filterDetails.hidden = !filterDetails.hidden;
         toggleFiltersBtn.textContent = filterDetails.hidden ? "更多筛选" : "收起筛选";
-      });
-
-      function releaseDetailBlobUrls() {
-        state.detailBlobUrls.forEach(function (url) {
-          try { URL.revokeObjectURL(url); }
-          catch {}
-        });
-        state.detailBlobUrls = [];
       }
+
+      toggleFiltersBtn.addEventListener("click", toggleFiltersBtnHandler);
+
 
       function setStatus(target, message, kind) {
         target.textContent = message;
@@ -109,7 +95,7 @@
       }
 
       function setAuthStatus(message, kind) {
-        setStatus(authStatus, message, kind);
+        setActionStatus(message, kind);
       }
 
       function setActionStatus(message, kind) {
@@ -435,74 +421,7 @@
         return doc.body ? doc.body.innerHTML : dirty;
       }
 
-      function rewriteCidUrls(html, cidMap) {
-        const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
-        doc.querySelectorAll("[src],[href]").forEach(function (node) {
-          ["src", "href"].forEach(function (name) {
-            const value = String(node.getAttribute(name) || "").trim();
-            if (!value.toLowerCase().startsWith("cid:")) return;
-            const cid = value.slice(4).trim().replace(/^<|>$/g, "").toLowerCase();
-            const url = cidMap.get(cid);
-            if (url) node.setAttribute(name, url);
-          });
-        });
-        return doc.body ? doc.body.innerHTML : String(html || "");
-      }
 
-      async function buildCidBlobUrlMap(attachments) {
-        const cidMap = new Map();
-        const inlineItems = (attachments || []).filter(function (item) {
-          return String(item.contentId || "").trim() && String(item.disposition || "").toLowerCase() === "inline";
-        });
-        for (const item of inlineItems) {
-          const blob = await fetchBlob(String(item.downloadUrl || ""));
-          const url = URL.createObjectURL(blob);
-          state.detailBlobUrls.push(url);
-          cidMap.set(String(item.contentId || "").trim().toLowerCase(), url);
-        }
-        return cidMap;
-      }
-
-      function buildHtmlPreviewDocument(value) {
-        const cleanHtml = sanitizeHtml(value);
-        return [
-          '<!DOCTYPE html><html><head><meta charset="UTF-8">',
-          '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
-          '<base target="_blank">',
-          '<style>html,body{margin:0;padding:0;background:#fff;color:#111827;font-family:Arial,"PingFang SC","Microsoft YaHei",sans-serif;}body{padding:16px;line-height:1.6;}img{max-width:100%;height:auto;}table{max-width:100%;border-collapse:collapse;}pre{white-space:pre-wrap;word-break:break-word;}a{color:#2563eb;}</style>',
-          '</head><body>',
-          cleanHtml,
-          '</body></html>'
-        ].join("");
-      }
-
-      async function renderHtmlBody(value, attachments) {
-        detailBody.innerHTML = '<iframe class="mail-html-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>';
-        const frame = detailBody.querySelector("iframe");
-        if (!(frame instanceof HTMLIFrameElement)) return;
-        const cidMap = await buildCidBlobUrlMap(attachments || []);
-        const html = rewriteCidUrls(value, cidMap);
-        frame.srcdoc = buildHtmlPreviewDocument(html);
-      }
-
-      function htmlToText(value) {
-        const doc = new DOMParser().parseFromString(String(value || ""), "text/html");
-        return doc.body ? (doc.body.textContent || "") : String(value || "");
-      }
-
-      function cleanupBodyText(value) {
-        return String(value || "").replace(/\n{3,}/g, "\n\n").trim();
-      }
-
-      function renderMetaCard(label, value) {
-        return [
-          '<div class="meta-card"><strong>',
-          escapeHtml(label),
-          '</strong><span>',
-          escapeHtml(value || "-"),
-          '</span></div>'
-        ].join("");
-      }
 
       function renderCopyCell(value, className) {
         const text = String(value || "");
@@ -517,29 +436,6 @@
         ].join("");
       }
 
-      function renderHeaderTable(headers) {
-        const entries = Object.entries(headers || {});
-        if (entries.length === 0) return '<div class="small">暂无头信息</div>';
-        return [
-          '<table class="header-table"><tbody>',
-          entries.map(function (entry) {
-            return '<tr><td>' + escapeHtml(entry[0]) + '</td><td>' + escapeHtml(entry[1]) + '</td></tr>';
-          }).join(""),
-          '</tbody></table>'
-        ].join("");
-      }
-
-      function openDetailModal() {
-        detailModal.hidden = false;
-        document.body.style.overflow = "hidden";
-      }
-
-      function closeDetailModal() {
-        detailModal.hidden = true;
-        document.body.style.overflow = "";
-        releaseDetailBlobUrls();
-      }
-
       function renderTable(items) {
         if (!Array.isArray(items) || items.length === 0) {
           mailTableBody.innerHTML = '<tr><td colspan="5" class="empty">没有符合条件的邮件</td></tr>';
@@ -547,12 +443,12 @@
         }
         const rows = items.map(function (item) {
           return [
-            '<tr>',
+            '<tr class="detail-btn" style="cursor:pointer;" data-id="', escapeHtml(item.id || ""), '">',
             '<td class="col-time">', escapeHtml(formatDateTimeDisplay(item.receivedAt)), '</td>',
             renderCopyCell(item.to, 'col-to'),
             renderCopyCell(item.from, 'col-from'),
             renderCopyCell(item.subject, 'col-subject'),
-            '<td class="col-actions"><button class="secondary detail-btn" type="button" data-id="', escapeHtml(item.id || ""), '">详情</button></td>',
+            '<td class="col-actions"><span style="color:var(--accent-primary); font-size:0.875rem;">查看 &rarr;</span></td>',
             '</tr>'
           ].join("");
         }).join("");
@@ -586,65 +482,7 @@
         return { params, page, pageSize };
       }
 
-      function formatFileSize(bytes) {
-        if (bytes < 1024) return bytes + " B";
-        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-        return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-      }
 
-      async function downloadAttachment(item) {
-        const blob = await fetchBlob(String(item.downloadUrl || ""));
-        const url = URL.createObjectURL(blob);
-        try {
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = String(item.filename || "attachment");
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-        } finally {
-          setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-        }
-      }
-
-      function renderAttachmentList(items) {
-        const downloadable = (items || []).filter(function (a) {
-          return String(a.disposition || "attachment").toLowerCase() === "attachment";
-        });
-        if (!Array.isArray(downloadable) || downloadable.length === 0) {
-          detailAttachments.innerHTML = '<div class="small">无附件</div>';
-          return;
-        }
-        // 每个附件渲染为一行下载按钮，下载时通过 fetch 携带 Bearer Token。
-        detailAttachments.innerHTML = downloadable.map(function (a) {
-          return [
-            '<div class="attachment-row">',
-            '<span class="attachment-name">' + escapeHtml(a.filename) + '</span>',
-            '<span class="attachment-meta">' + escapeHtml(a.contentType) + ' · ' + formatFileSize(a.sizeBytes) + '</span>',
-            '<button class="attachment-dl" type="button" data-attachment="' + escapeHtml(JSON.stringify(a)) + '">下载</button>',
-            '</div>'
-          ].join("");
-        }).join("");
-      }
-
-      async function renderMailDetail(data, attachments) {
-        detailTitle.textContent = data.subject || "邮件详情";
-        detailMeta.innerHTML = [
-          renderMetaCard("主题", data.subject),
-          renderMetaCard("发件人", data.from),
-          renderMetaCard("收件人", data.to),
-          renderMetaCard("接收时间", formatDateTimeDisplay(data.receivedAt || data.date)),
-          renderMetaCard("Message-ID", data.messageId),
-          renderMetaCard("日期头", data.date)
-        ].join("");
-        if (data.htmlBody) {
-          await renderHtmlBody(data.htmlBody, attachments || []);
-        } else {
-          detailBody.textContent = cleanupBodyText(data.textBody || htmlToText(data.raw)) || "没有提取到可读正文。";
-        }
-        detailHeaders.innerHTML = renderHeaderTable(data.headers);
-        detailRaw.textContent = data.raw || "暂无原始内容";
-      }
 
       async function loadMails(pageOverride, options) {
         const loadingText = options && options.loadingText ? String(options.loadingText) : "查询中...";
@@ -677,27 +515,7 @@
       }
 
       async function loadMailDetail(id) {
-        try {
-          releaseDetailBlobUrls();
-          detailTitle.textContent = "邮件详情加载中";
-          detailMeta.innerHTML = "";
-          detailBody.textContent = "正在整理邮件正文...";
-          detailHeaders.innerHTML = "";
-          detailAttachments.innerHTML = '<div class="small">加载中...</div>';
-          detailRaw.textContent = "";
-          openDetailModal();
-          // 并行请求邮件详情与附件列表，减少等待时间。
-          const [data, attData] = await Promise.all([
-            fetchJson("/api/mails/" + encodeURIComponent(id), { method: "GET" }),
-            fetchJson("/api/mails/" + encodeURIComponent(id) + "/attachments", { method: "GET" })
-          ]);
-          const attachments = Array.isArray(attData.items) ? attData.items : [];
-          await renderMailDetail(data, attachments);
-          renderAttachmentList(attachments);
-        } catch (error) {
-          detailTitle.textContent = "邮件详情";
-          detailBody.textContent = "详情加载失败: " + (error && error.message ? error.message : String(error));
-        }
+        window.open('/detail?id=' + encodeURIComponent(id), '_blank');
       }
 
       async function verifyToken() {
@@ -816,39 +634,22 @@
       mailTableBody.addEventListener("click", function (event) {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
-        const button = target.closest(".detail-btn");
-        if (button instanceof HTMLElement) {
-          const id = button.getAttribute("data-id");
-          if (id) loadMailDetail(id);
+
+        const cell = target.closest(".copy-cell");
+        if (cell instanceof HTMLElement) {
+          event.stopPropagation();
+          const value = cell.getAttribute("data-copy") || "";
+          copyCellValue(value).catch(function () {
+            setActionStatus("复制失败，请手动选择内容。", "error");
+          });
           return;
         }
-        const cell = target.closest(".copy-cell");
-        if (!(cell instanceof HTMLElement)) return;
-        const value = cell.getAttribute("data-copy") || "";
-        copyCellValue(value).catch(function () {
-          setActionStatus("复制失败，请手动选择内容。", "error");
-        });
-      });
-      detailAttachments.addEventListener("click", function (event) {
-        const target = event.target;
-        if (!(target instanceof HTMLElement)) return;
-        const button = target.closest(".attachment-dl");
-        if (!(button instanceof HTMLElement)) return;
-        const raw = button.getAttribute("data-attachment") || "{}";
-        let item = {};
-        try { item = JSON.parse(raw); }
-        catch { item = {}; }
-        downloadAttachment(item).catch(function (error) {
-          setActionStatus("附件下载失败: " + (error && error.message ? error.message : String(error)), "error");
-        });
-      });
-      closeDetailBtn.addEventListener("click", closeDetailModal);
-      closeDetailBtn2.addEventListener("click", closeDetailModal);
-      detailModal.addEventListener("click", function (event) {
-        if (event.target === detailModal) closeDetailModal();
-      });
-      document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape" && !detailModal.hidden) closeDetailModal();
+
+        const tr = target.closest(".detail-btn");
+        if (tr instanceof HTMLElement) {
+          const id = tr.getAttribute("data-id");
+          if (id) loadMailDetail(id);
+        }
       });
       document.addEventListener("visibilitychange", function () {
         if (document.hidden) {
