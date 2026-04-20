@@ -487,6 +487,12 @@ input::placeholder {
   position: sticky;
   top: var(--space-md);
   z-index: 10;
+  transition: position var(--transition-base);
+}
+
+.filter-panel[data-expanded="true"] {
+  position: relative;
+  top: auto;
 }
 
 .filter-bar {
@@ -601,7 +607,7 @@ input::placeholder {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  justify-content: center;
+  justify-content: flex-end;
 }
 
 .pagination-pill {
@@ -1347,8 +1353,9 @@ tbody tr:hover td.col-actions {
     padding: var(--space-lg);
   }
 
-  .filter-panel {
-    position: static;
+  .filter-panel, .filter-panel[data-expanded="true"] {
+    position: relative;
+    top: auto;
   }
 
   h1 {

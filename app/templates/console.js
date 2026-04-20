@@ -84,6 +84,12 @@
       function toggleFiltersBtnHandler() {
         filterDetails.hidden = !filterDetails.hidden;
         toggleFiltersBtn.textContent = filterDetails.hidden ? "更多筛选" : "收起筛选";
+
+        // PC端展开时取消固定，折叠时固定
+        const filterPanel = document.querySelector(".filter-panel");
+        if (filterPanel) {
+          filterPanel.setAttribute("data-expanded", !filterDetails.hidden);
+        }
       }
 
       toggleFiltersBtn.addEventListener("click", toggleFiltersBtnHandler);
@@ -426,13 +432,11 @@
       function renderCopyCell(value, className) {
         const text = String(value || "");
         return [
-          '<td class="copy-cell ',
+          '<td class="',
           className,
-          '" title="点击复制完整内容" data-copy="',
-          escapeHtml(text),
-          '"><span class="copy-text">',
+          '">',
           escapeHtml(text || "-"),
-          '</span></td>'
+          '</td>'
         ].join("");
       }
 
@@ -443,12 +447,12 @@
         }
         const rows = items.map(function (item) {
           return [
-            '<tr class="detail-btn" style="cursor:pointer;" data-id="', escapeHtml(item.id || ""), '">',
+            '<tr>',
             '<td class="col-time">', escapeHtml(formatDateTimeDisplay(item.receivedAt)), '</td>',
             renderCopyCell(item.to, 'col-to'),
             renderCopyCell(item.from, 'col-from'),
             renderCopyCell(item.subject, 'col-subject'),
-            '<td class="col-actions"><span style="color:var(--accent-primary); font-size:0.875rem;">查看 &rarr;</span></td>',
+            '<td class="col-actions"><button class="secondary detail-btn" type="button" data-id="', escapeHtml(item.id || ""), '">详情</button></td>',
             '</tr>'
           ].join("");
         }).join("");
@@ -568,11 +572,6 @@
         syncAutoRefresh();
       }
 
-      async function copyCellValue(value) {
-        if (!value) return;
-        await navigator.clipboard.writeText(value);
-        setActionStatus("已复制完整内容。", "success");
-      }
 
       saveTokenBtn.addEventListener("click", function () {
         const token = getToken();
@@ -635,19 +634,9 @@
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
 
-        const cell = target.closest(".copy-cell");
-        if (cell instanceof HTMLElement) {
-          event.stopPropagation();
-          const value = cell.getAttribute("data-copy") || "";
-          copyCellValue(value).catch(function () {
-            setActionStatus("复制失败，请手动选择内容。", "error");
-          });
-          return;
-        }
-
-        const tr = target.closest(".detail-btn");
-        if (tr instanceof HTMLElement) {
-          const id = tr.getAttribute("data-id");
+        const button = target.closest(".detail-btn");
+        if (button instanceof HTMLElement) {
+          const id = button.getAttribute("data-id");
           if (id) loadMailDetail(id);
         }
       });
