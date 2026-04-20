@@ -224,7 +224,7 @@
   }
 
   async function renderHtmlBody(value, attachments) {
-    detailBody.innerHTML = '<iframe class="mail-html-frame" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin" referrerpolicy="no-referrer"></iframe>';
+    detailBody.innerHTML = '<iframe class="mail-html-frame" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts" referrerpolicy="no-referrer"></iframe>';
     const frame = detailBody.querySelector("iframe");
     if (!(frame instanceof HTMLIFrameElement)) return;
     const cidMap = await buildCidBlobUrlMap(attachments || []);
