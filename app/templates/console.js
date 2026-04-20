@@ -22,7 +22,6 @@
       const autoCleanupStatus = document.getElementById("autoCleanupStatus");
       const autoRefreshCell = document.getElementById("autoRefreshCell");
       const autoCleanupCell = document.getElementById("autoCleanupCell");
-      const actionCell = document.getElementById("actionCell");
       const resetFiltersBtn = document.getElementById("resetFiltersBtn");
       const prevPageBtn = document.getElementById("prevPageBtn");
       const nextPageBtn = document.getElementById("nextPageBtn");
@@ -31,7 +30,6 @@
       const paginationInfo = document.getElementById("paginationInfo");
       const paginationInfoTop = document.getElementById("paginationInfoTop");
       const authStatus = document.getElementById("authStatus");
-      const actionStatus = document.getElementById("actionStatus");
       const mailTableBody = document.getElementById("mailTableBody");
       const detailModal = document.getElementById("detailModal");
       const detailTitle = document.getElementById("detailTitle");
@@ -45,7 +43,41 @@
       const STORAGE_AUTO_REFRESH_KEY = "mail_worker_auto_refresh_on";
       const toggleFiltersBtn = document.getElementById("toggleFiltersBtn");
       const filterDetails = document.getElementById("filterDetails");
+      const themeToggleBtn = document.getElementById("themeToggleBtn");
       const state = { page: 1, pageSize: 20, total: 0, totalPages: 0, lastItems: [], autoRefreshTimer: 0, autoRefreshCountdownTimer: 0, autoRefreshRemainingSeconds: 0, autoCleanupCountdownTimer: 0, autoCleanupRemainingSeconds: 0, isAutoRefreshOn: true, isAutoCleanupOn: false, isLoadingMails: false, isCleaningUp: false, autoCleanupConfiguredMinutes: 10, autoCleanupLastRunAt: "", autoCleanupLastDeletedCount: 0, detailBlobUrls: [] };
+      const STORAGE_THEME_KEY = "mail_worker_theme";
+
+      function initTheme() {
+        const savedTheme = getSavedValue(STORAGE_THEME_KEY, null);
+        const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const defaultTheme = savedTheme || (prefersDark ? "dark" : "light");
+        document.documentElement.dataset.theme = defaultTheme;
+        if (themeToggleBtn) updateThemeIcon(defaultTheme);
+      }
+
+      function updateThemeIcon(theme) {
+        if (!themeToggleBtn) return;
+        if (theme === "light") {
+          themeToggleBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>'; // moon icon for switching to dark
+          themeToggleBtn.title = "切换至暗色模式";
+        } else {
+          themeToggleBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="4.22" x2="19.78" y2="5.64"></line></svg>'; // sun icon for switching to light
+          themeToggleBtn.title = "切换至亮色模式";
+        }
+      }
+
+      function toggleTheme() {
+        const current = document.documentElement.dataset.theme || "dark";
+        const next = current === "dark" ? "light" : "dark";
+        document.documentElement.dataset.theme = next;
+        saveValue(STORAGE_THEME_KEY, next);
+        updateThemeIcon(next);
+      }
+
+      if (themeToggleBtn) {
+        themeToggleBtn.addEventListener("click", toggleTheme);
+      }
+      initTheme();
 
       function loadAutoRefreshState() {
         const saved = getSavedValue(STORAGE_AUTO_REFRESH_KEY, null);
@@ -81,9 +113,30 @@
       }
 
       function setActionStatus(message, kind) {
-        actionStatus.textContent = message;
-        /* 操作结果单元格高亮颜色跟随操作类型。 */
-        actionCell.dataset.kind = kind || "info";
+        if (!message) return;
+        const container = document.getElementById("toastContainer");
+        if (!container) return;
+
+        const toast = document.createElement("div");
+        toast.className = "toast";
+        toast.dataset.kind = kind || "info";
+
+        // Add icon based on kind
+        let icon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>';
+        if (kind === "success") icon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>';
+        if (kind === "warning") icon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
+        if (kind === "error") icon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>';
+
+        toast.innerHTML = `<span style="display:flex;align-items:center;">${icon}</span> <span>${message}</span>`;
+        container.appendChild(toast);
+
+        // Remove after 3 seconds
+        setTimeout(() => {
+          toast.classList.add("hiding");
+          setTimeout(() => {
+            if (toast.parentNode) toast.remove();
+          }, 300); // Wait for animation
+        }, 3000);
       }
 
       function getAutoRefreshSeconds() {
@@ -499,7 +552,7 @@
             renderCopyCell(item.to, 'col-to'),
             renderCopyCell(item.from, 'col-from'),
             renderCopyCell(item.subject, 'col-subject'),
-            '<td class="col-actions"><button class="secondary detail-btn" type="button" data-id="', escapeHtml(item.id || ""), '">查看详情</button></td>',
+            '<td class="col-actions"><button class="secondary detail-btn" type="button" data-id="', escapeHtml(item.id || ""), '">详情</button></td>',
             '</tr>'
           ].join("");
         }).join("");

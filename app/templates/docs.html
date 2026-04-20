@@ -10,9 +10,12 @@
   <div class="page-shell">
     <div class="wrap">
       <section class="hero">
-        <div class="hero-copy">
-          <span class="eyebrow">API DOCUMENTATION</span>
-          <h1>接口文档</h1>
+        <div class="hero-copy" style="position:relative;">
+          <div style="display:flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+            <span class="eyebrow">API DOCUMENTATION</span>
+            <button id="themeToggleBtn" class="ghost" type="button" style="padding: 0.5rem; border-radius: 50%;" title="切换亮/暗模式"></button>
+          </div>
+          <h1 style="margin-top:0;">接口文档</h1>
           <p class="hero-text">控制台现在由 FastAPI 提供，邮件存储位于 PostgreSQL，邮件写入入口由 Cloudflare Worker 调用内部接口。</p>
           <div class="top-links">
             <a class="nav-link primary" href="/">返回首页</a>
@@ -131,5 +134,58 @@ fetch("/api/mails?" + params.toString(), {
       </div>
     </div>
   </div>
+  <script>
+    (function() {
+      const STORAGE_THEME_KEY = "mail_worker_theme";
+      const themeToggleBtn = document.getElementById("themeToggleBtn");
+
+      function getSavedValue(key, def) {
+        try {
+          const val = localStorage.getItem(key);
+          return val !== null ? val : def;
+        } catch (e) {
+          return def;
+        }
+      }
+
+      function saveValue(key, val) {
+        try {
+          localStorage.setItem(key, val);
+        } catch (e) {}
+      }
+
+      function initTheme() {
+        const savedTheme = getSavedValue(STORAGE_THEME_KEY, null);
+        const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const defaultTheme = savedTheme || (prefersDark ? "dark" : "light");
+        document.documentElement.dataset.theme = defaultTheme;
+        if (themeToggleBtn) updateThemeIcon(defaultTheme);
+      }
+
+      function updateThemeIcon(theme) {
+        if (!themeToggleBtn) return;
+        if (theme === "light") {
+          themeToggleBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>';
+          themeToggleBtn.title = "切换至暗色模式";
+        } else {
+          themeToggleBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="4.22" x2="19.78" y2="5.64"></line></svg>';
+          themeToggleBtn.title = "切换至亮色模式";
+        }
+      }
+
+      function toggleTheme() {
+        const current = document.documentElement.dataset.theme || "dark";
+        const next = current === "dark" ? "light" : "dark";
+        document.documentElement.dataset.theme = next;
+        saveValue(STORAGE_THEME_KEY, next);
+        updateThemeIcon(next);
+      }
+
+      if (themeToggleBtn) {
+        themeToggleBtn.addEventListener("click", toggleTheme);
+      }
+      initTheme();
+    })();
+  </script>
 </body>
 </html>
