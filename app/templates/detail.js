@@ -376,7 +376,6 @@
   }
 
   detailHeaders.addEventListener("click", function (event) {
-    detailHeaders.addEventListener("click", function (event) {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     const td = target.closest("td[data-copy]");
