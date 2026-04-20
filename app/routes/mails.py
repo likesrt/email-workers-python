@@ -42,13 +42,27 @@ def handle_list_mails(
 
 
 @router.get("/api/mails/{mail_id}")
-def handle_get_mail_detail_by_id(mail_id: str, request: Request) -> dict[str, object]:
-    """按邮件 ID 查询邮件详情。"""
+def handle_get_mail_detail_by_id(
+    mail_id: str, request: Request, includeRaw: bool = False
+) -> dict[str, object]:
+    """按邮件 ID 查询邮件详情。
+
+    Args:
+        mail_id: 邮件主键 ID。
+        request: 当前 HTTP 请求对象。
+        includeRaw: 是否一并返回原始邮件全文。
+
+    Returns:
+        dict[str, object]: 邮件详情响应。
+
+    Notes:
+        默认不返回 raw，可减少详情页首屏体积；调试时可显式开启。
+    """
     require_api_token(request)
     mail = get_mail_by_id(mail_id)
     if not mail:
         raise HTTPException(status_code=404, detail="Mail not found.")
-    return map_mail_detail(mail)
+    return map_mail_detail(mail, include_raw=includeRaw)
 
 
 @router.get("/api/mail/{email}")
@@ -68,9 +82,22 @@ def handle_list_mails_by_address(
 
 @router.get("/api/mail/{email}/{mail_id}")
 def handle_get_mail_detail_by_address(
-    email: str, mail_id: str, request: Request
+    email: str, mail_id: str, request: Request, includeRaw: bool = False
 ) -> dict[str, object]:
-    """按收件邮箱和邮件 ID 查询邮件详情，兼容旧接口路径。"""
+    """按收件邮箱和邮件 ID 查询邮件详情，兼容旧接口路径。
+
+    Args:
+        email: 收件邮箱地址。
+        mail_id: 邮件主键 ID。
+        request: 当前 HTTP 请求对象。
+        includeRaw: 是否一并返回原始邮件全文。
+
+    Returns:
+        dict[str, object]: 邮件详情响应。
+
+    Notes:
+        兼容旧路径时保持与新路径一致的体积控制策略。
+    """
     require_api_token(request)
     address = normalize_email_address(email)
     if not is_valid_email_address(address):
@@ -78,7 +105,7 @@ def handle_get_mail_detail_by_address(
     mail = get_mail_by_id_and_address(address, mail_id)
     if not mail:
         raise HTTPException(status_code=404, detail="Mail not found.")
-    return map_mail_detail(mail)
+    return map_mail_detail(mail, include_raw=includeRaw)
 
 
 def _build_mail_list_response(

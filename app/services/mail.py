@@ -81,11 +81,22 @@ def map_mail_summary(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def map_mail_detail(row: dict[str, Any]) -> dict[str, Any]:
-    """将数据库行映射为邮件详情结构。"""
+def map_mail_detail(row: dict[str, Any], include_raw: bool = True) -> dict[str, Any]:
+    """将数据库行映射为邮件详情结构。
+
+    Args:
+        row: 数据库返回的邮件记录。
+        include_raw: 是否在响应中包含原始邮件全文。
+
+    Returns:
+        dict[str, Any]: 适合接口直接返回的邮件详情结构。
+
+    Notes:
+        原始邮件可能很大，详情页首屏可通过关闭 include_raw 减少传输体积。
+    """
     raw_text = str(row.get("raw_text") or "")
     bodies = extract_mail_bodies(raw_text)
-    return {
+    detail = {
         "id": str(row["id"]),
         "messageId": str(row["message_id"]),
         "from": str(row["mail_from"]),
@@ -94,10 +105,12 @@ def map_mail_detail(row: dict[str, Any]) -> dict[str, Any]:
         "date": str(row["date_header"]),
         "receivedAt": isoformat_value(row["received_at"]),
         "headers": row.get("headers_json") or {},
-        "raw": raw_text,
         "textBody": bodies["textBody"],
         "htmlBody": bodies["htmlBody"],
     }
+    if include_raw:
+        detail["raw"] = raw_text
+    return detail
 
 
 def count_mails(filters: MailListFilters) -> int:

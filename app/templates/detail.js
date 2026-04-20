@@ -9,8 +9,9 @@
   const detailHeaders = document.getElementById("detailHeaders");
   const detailAttachments = document.getElementById("detailAttachments");
   const detailRaw = document.getElementById("detailRaw");
+  const loadRawBtn = document.getElementById("loadRawBtn");
 
-  const state = { detailBlobUrls: [] };
+  const state = { detailBlobUrls: [], mailId: "", rawLoaded: false };
 
   function initTheme() {
     const savedTheme = getSavedValue(STORAGE_THEME_KEY, null);
@@ -196,17 +197,26 @@
     return doc.body ? doc.body.innerHTML : String(html || "");
   }
 
+  /**
+   * 为 cid 内嵌附件构建 blob URL 映射。
+   * @param {Array<Record<string, any>>} attachments 当前邮件的附件列表。
+   * @returns {Promise<Map<string, string>>} 以 content-id 为键的临时访问地址映射。
+   * @remarks 使用并发下载减少多张内嵌图片邮件的首屏等待时间。
+   */
   async function buildCidBlobUrlMap(attachments) {
     const cidMap = new Map();
     const inlineItems = (attachments || []).filter(function (item) {
       return String(item.contentId || "").trim() && String(item.disposition || "").toLowerCase() === "inline";
     });
-    for (const item of inlineItems) {
+    const entries = await Promise.all(inlineItems.map(async function (item) {
       const blob = await fetchBlob(String(item.downloadUrl || ""));
       const url = URL.createObjectURL(blob);
-      state.detailBlobUrls.push(url);
-      cidMap.set(String(item.contentId || "").trim().toLowerCase(), url);
-    }
+      return [String(item.contentId || "").trim().toLowerCase(), url];
+    }));
+    entries.forEach(function (entry) {
+      state.detailBlobUrls.push(entry[1]);
+      cidMap.set(entry[0], entry[1]);
+    });
     return cidMap;
   }
 
@@ -308,6 +318,13 @@
     }).join("");
   }
 
+  /**
+   * 渲染邮件详情页主内容。
+   * @param {Record<string, any>} data 邮件详情接口返回的数据。
+   * @param {Array<Record<string, any>>} attachments 当前邮件的附件列表。
+   * @returns {Promise<void>} 渲染完成后结束，无额外返回值。
+   * @remarks 原始邮件正文改为按需加载，首屏只渲染可读内容与头信息。
+   */
   async function renderMailDetail(data, attachments) {
     detailTitle.textContent = data.subject || "无主题";
     document.title = (data.subject || "邮件详情") + " - Email Workers";
@@ -322,14 +339,44 @@
     if (data.htmlBody) {
       await renderHtmlBody(data.htmlBody, attachments || []);
     } else {
-      const htmlContent = cleanupBodyText(data.textBody || htmlToText(data.raw));
+      const htmlContent = cleanupBodyText(data.textBody || "");
       detailBody.innerHTML = htmlContent ? '<div style="white-space: pre-wrap; font-family: var(--font-sans);">' + htmlContent + '</div>' : "没有提取到可读正文。";
     }
 
     detailHeaders.innerHTML = renderHeaderTable(data.headers);
-    detailRaw.textContent = data.raw || "暂无原始内容";
+    detailRaw.textContent = "未加载";
   }
 
+  /**
+   * 按需加载原始邮件全文。
+   * @returns {Promise<void>} 加载完成后结束，无额外返回值。
+   * @remarks 仅在用户主动点击后请求 raw，避免详情页首屏下载大文本。
+   */
+  async function loadRawContent() {
+    if (!state.mailId || state.rawLoaded) return;
+    if (loadRawBtn) loadRawBtn.disabled = true;
+    detailRaw.textContent = "原始内容加载中...";
+
+    try {
+        // raw 体积通常远大于正文摘要，这里延后请求，避免详情页打开时被大文本拖慢。
+      const data = await fetchJson(
+        "/api/mails/" + encodeURIComponent(state.mailId) + "?includeRaw=1",
+        { method: "GET" }
+      );
+      detailRaw.textContent = data.raw || "暂无原始内容";
+      state.rawLoaded = true;
+      if (loadRawBtn) loadRawBtn.textContent = "原始内容已加载";
+    } catch (error) {
+      detailRaw.textContent = "原始内容加载失败: " + (error && error.message ? error.message : String(error));
+      if (loadRawBtn) loadRawBtn.disabled = false;
+    }
+  }
+
+  /**
+   * 根据 URL 中的邮件 ID 加载详情与附件。
+   * @returns {Promise<void>} 加载完成后结束，无额外返回值。
+   * @remarks 首屏请求默认不带 raw，减少网络传输和页面等待时间。
+   */
   async function loadMailDetail() {
     const urlParams = new URLSearchParams(window.location.search);
     const id = urlParams.get('id');
@@ -340,8 +387,12 @@
       return;
     }
 
+    state.mailId = id;
+
     try {
       detailTitle.textContent = "邮件详情加载中...";
+      detailRaw.textContent = "未加载";
+      if (loadRawBtn) loadRawBtn.disabled = false;
 
       const [data, attData] = await Promise.all([
         fetchJson("/api/mails/" + encodeURIComponent(id), { method: "GET" }),
@@ -349,6 +400,7 @@
       ]);
 
       const attachments = Array.isArray(attData.items) ? attData.items : [];
+      state.rawLoaded = false;
       await renderMailDetail(data, attachments);
       renderAttachmentList(attachments);
     } catch (error) {
@@ -358,7 +410,14 @@
       detailHeaders.innerHTML = "";
       detailAttachments.innerHTML = "";
       detailRaw.textContent = "";
+      if (loadRawBtn) loadRawBtn.disabled = true;
     }
+  }
+
+  if (loadRawBtn) {
+    loadRawBtn.addEventListener("click", function () {
+      loadRawContent();
+    });
   }
 
   detailHeaders.addEventListener("click", function (event) {
