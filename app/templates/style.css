@@ -806,18 +806,25 @@ tbody tr:hover td.col-actions {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   padding: var(--space-md);
-  max-height: 400px;
+  max-height: 50vh;
   overflow-y: auto;
   line-height: 1.7;
+  word-break: break-word;
 }
 
 .mail-html-frame {
   width: 100%;
-  min-height: 400px;
+  min-height: 60vh;
   height: auto;
   border: none;
   border-radius: var(--radius-sm);
   background: white;
+  transition: filter var(--transition-base);
+}
+
+/* iframe Dark mode filter trick */
+html[data-theme="dark"] .mail-html-frame {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 .raw-box {
@@ -830,6 +837,31 @@ tbody tr:hover td.col-actions {
   font-size: 0.75rem;
   line-height: 1.5;
   color: var(--text-secondary);
+}
+
+.header-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.header-table td {
+  padding: var(--space-xs) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.header-table td:first-child {
+  width: 150px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.header-table td:last-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+.header-table td:last-child:hover {
+  background: var(--bg-elevated);
 }
 
 .toolbar {
@@ -1360,6 +1392,27 @@ tbody tr:hover td.col-actions {
 
   h1 {
     font-size: 2rem;
+  }
+
+  .detail-grid {
+    padding: var(--space-md);
+    gap: var(--space-md);
+  }
+
+  .detail-card {
+    padding: var(--space-md);
+  }
+
+  .body-box {
+    max-height: 60vh;
+  }
+
+  .mail-html-frame {
+    min-height: 70vh;
+  }
+
+  .header-table td:first-child {
+    width: 100px;
   }
 
   .filter-bar {

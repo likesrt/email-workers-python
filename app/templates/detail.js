@@ -276,7 +276,7 @@
     return [
       '<table class="header-table"><tbody>',
       entries.map(function (entry) {
-        return '<tr><td>' + escapeHtml(entry[0]) + '</td><td>' + escapeHtml(entry[1]) + '</td></tr>';
+        return '<tr><td>' + escapeHtml(entry[0]) + '</td><td title="点击复制" data-copy="' + escapeHtml(entry[1]) + '">' + escapeHtml(entry[1]) + '</td></tr>';
       }).join(""),
       '</tbody></table>'
     ].join("");
@@ -374,6 +374,23 @@
       detailRaw.textContent = "";
     }
   }
+
+  detailHeaders.addEventListener("click", function (event) {
+    detailHeaders.addEventListener("click", function (event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const td = target.closest("td[data-copy]");
+    if (!td) return;
+    const value = td.getAttribute("data-copy") || "";
+    if (!value) return;
+    navigator.clipboard.writeText(value)
+      .then(function() {
+        setActionStatus("已复制 " + (td.previousElementSibling ? td.previousElementSibling.textContent : "此行") + " 的值。", "success");
+      })
+      .catch(function(err) {
+        setActionStatus("复制失败: " + String(err), "error");
+      });
+  });
 
   detailAttachments.addEventListener("click", function (event) {
     const target = event.target;
